@@ -1,10 +1,12 @@
+use crate::effect::{FromResidual, Residual, TryEffect, WithOutput};
+use core::ops::ControlFlow;
 use extend::ext;
 
-/// Extends optional values with traversal operations.
+/// Extends optional values with traversal and sequencing operations.
 #[ext(name = OptionTraversableExt)]
 pub impl<T> Option<T> {
-    /// Sequencing operation on [Option] type when inner type is `Applicative` or `Monad` like [Result].
-    /// See [sequence](OptionResultExt::sequence) for traverse with identity closure.
+    /// Sequencing operation on [Option] type when inner type is `Applicative` or `Monad`.
+    /// See [sequence](OptionTraversableExt::sequence) for traverse with identity closure.
     /// Defined by [Conor McBride](https://doi.org/10.1017/S0956796807006326) (2005) in Haskell2010 base
     /// [Data.Traversable](https://hackage.haskell.org/package/base-4.21.0.0/docs/Data-Traversable.html).
     /// > **Traversable** structures support element-wise **sequencing** of **Applicative** effects
@@ -14,7 +16,7 @@ pub impl<T> Option<T> {
     /// class (Functor t, Foldable t) => Traversable t where
     ///   traverse :: Applicative f => (a -> f b) -> t a -> f (t b)
     /// ```
-    /// From this Haskell definition `t` is [Option] and `f` is [Result].
+    /// From this Haskell definition `t` is [Option] and `f` is whichever effect the closure states.
     ///
     /// # Examples
     ///
@@ -24,11 +26,17 @@ pub impl<T> Option<T> {
     /// let r: Result<_, ()> = Some(42).traverse(|x| Ok(x + 100));
     ///
     /// assert_eq!(r, Ok(Some(142)));
+    ///
+    /// let o = Some(42).traverse(|x| Some(x + 100));
+    ///
+    /// assert_eq!(o, Some(Some(142)));
     /// ```
     #[inline]
-    fn traverse<F, R, E>(self, f: F) -> Result<Option<R>, E>
+    fn traverse<F, Effect>(self, f: F) -> WithOutput<Effect, Option<Effect::Output>>
     where
-        F: FnOnce(T) -> Result<R, E>,
+        F: FnOnce(T) -> Effect,
+        Effect: TryEffect,
+        Effect::Residual: Residual<Option<Effect::Output>>,
     {
         // Traverse defined in terms of `sequence`.
         // NOTE: Traversable minimal definition is `traverse` or `sequence` so only one needs to be
@@ -38,8 +46,11 @@ pub impl<T> Option<T> {
 
         // Or defined directly by pattern matching.
         match self {
-            Some(t) => f(t).map(Some),
-            None => Ok(None),
+            Some(value) => match f(value).branch() {
+                ControlFlow::Continue(output) => TryEffect::from_output(Some(output)),
+                ControlFlow::Break(residual) => FromResidual::from_residual(residual),
+            },
+            None => TryEffect::from_output(None),
         }
     }
 
@@ -56,9 +67,11 @@ pub impl<T> Option<T> {
     /// assert_eq!(r, Ok(Some(142)));
     /// ```
     #[inline]
-    fn traverse_opt<F, R, E>(self, f: F) -> Result<Option<R>, E>
+    fn traverse_opt<F, R, Effect>(self, f: F) -> WithOutput<Effect, Option<R>>
     where
-        F: FnOnce(T) -> Result<Option<R>, E>,
+        F: FnOnce(T) -> Effect,
+        Effect: TryEffect<Output = Option<R>>,
+        Effect::Residual: Residual<Option<R>>,
     {
         // Traverse (opt) defined in terms of `sequence` (opt).
         // NOTE: Traversable minimal definition is `traverse` or `sequence` so only one needs to be
@@ -68,18 +81,17 @@ pub impl<T> Option<T> {
 
         // Or defined directly by pattern matching.
         match self {
-            Some(t) => f(t),
-            None => Ok(None),
+            Some(value) => match f(value).branch() {
+                ControlFlow::Continue(output) => TryEffect::from_output(output),
+                ControlFlow::Break(residual) => FromResidual::from_residual(residual),
+            },
+            None => TryEffect::from_output(None),
         }
     }
-}
 
-/// Extends optional results with sequencing.
-#[ext(name = OptionResultExt)]
-pub impl<T, E> Option<Result<T, E>> {
-    /// An alias for [transpose](Option::transpose), a _correct_ name for this function, although written for
-    /// the fixed data types ([Option] and [Result]). See also [traverse](OptionTraversableExt::traverse) variant
-    /// that accepts a mapping closure.
+    /// An alias for [transpose](Option::transpose), a _correct_ name for this function, and stated
+    /// for whichever effect the option carries rather than for [Result] alone. See also
+    /// [traverse](OptionTraversableExt::traverse) variant that accepts a mapping closure.
     /// Defined by [Conor McBride](https://doi.org/10.1017/S0956796807006326) (2005) in Haskell2010 base
     /// [Data.Traversable](https://hackage.haskell.org/package/base-4.21.0.0/docs/Data-Traversable.html).
     /// > **Traversable** structures support element-wise **sequencing** of **Applicative** effects
@@ -89,7 +101,7 @@ pub impl<T, E> Option<Result<T, E>> {
     /// class (Functor t, Foldable t) => Traversable t where
     ///   sequence :: Applicative f => t (f a) -> f (t a)
     /// ```
-    /// From this Haskell definition `t` is [Option] and `f` is [Result].
+    /// From this Haskell definition `t` is [Option] and `f` is the effect it carries.
     ///
     /// # Examples
     ///
@@ -99,40 +111,37 @@ pub impl<T, E> Option<Result<T, E>> {
     /// let r: Result<_, ()> = Some(Ok(42)).sequence();
     ///
     /// assert_eq!(r, Ok(Some(42)));
+    ///
+    /// let o = Some(Some(42)).sequence();
+    ///
+    /// assert_eq!(o, Some(Some(42)));
     /// ```
     #[inline]
-    fn sequence(self) -> Result<Option<T>, E> {
+    fn sequence(self) -> WithOutput<T, Option<T::Output>>
+    where
+        T: TryEffect,
+        T::Residual: Residual<Option<T::Output>>,
+    {
         // 1. Sequence defined in terms of `traverse`.
         // NOTE: Traversable minimal definition is `traverse` or `sequence` so only one needs to be
         //       implemented and other can be derived.
         //       https://hackage.haskell.org/package/base-4.21.0.0/docs/Data-Traversable.html
         // self.traverse(identity)
 
-        // 2. Sequence defined as alias for `Option::transpose`.
-        self.transpose()
-
-        // 3. Similar implementation as `Option::transpose`.
-        // match self {
-        //     Some(r) => r.map(Some),
-        //     //            ^- Result::map (Functor)
-        //     None => Ok(None),
-        //     //       ^- Result::pure (Applicative)
-        // }
-
-        // Other implementations using _fold_.
-
-        // 4. Using `fold` on [Option] type.
-        // self.into_iter().fold(Ok(None), |_, r| r.map(Some))
-
-        // 5. Using `unwrap` on [Option] type. Unwrap is fold in disguise!
-        // self.map(|r| r.map(Some)).unwrap_or_else(|| Ok(None))
+        // 2. Sequence defined as alias for `Option::transpose`, which states `Result` only, so the
+        //    same thing is stated here for whichever effect is carried.
+        match self {
+            Some(effect) => match effect.branch() {
+                ControlFlow::Continue(output) => TryEffect::from_output(Some(output)),
+                ControlFlow::Break(residual) => FromResidual::from_residual(residual),
+            },
+            //   ^- Functor, then Applicative `pure` on the way out
+            None => TryEffect::from_output(None),
+            //      ^- `pure` again, over an option carrying nothing
+        }
     }
-}
 
-/// Extends optional results containing optional values with filtered sequencing.
-#[ext(name = OptionResultOptionExt)]
-pub impl<T, E> Option<Result<Option<T>, E>> {
-    /// Similar to [sequence](OptionResultExt::sequence), but with inner value wrapped inside
+    /// Similar to [sequence](OptionTraversableExt::sequence), but with inner value wrapped inside
     /// [Option] so it has effect of filtering None values.
     ///
     /// # Examples
@@ -145,7 +154,11 @@ pub impl<T, E> Option<Result<Option<T>, E>> {
     /// assert_eq!(r, Ok(Some(42)));
     /// ```
     #[inline]
-    fn sequence_opt(self) -> Result<Option<T>, E> {
+    fn sequence_opt<R>(self) -> WithOutput<T, Option<R>>
+    where
+        T: TryEffect<Output = Option<R>>,
+        T::Residual: Residual<Option<R>>,
+    {
         // Sequence (opt) defined in terms of `traverse` (opt).
         // NOTE: Traversable minimal definition is `traverse` or `sequence` so only one needs to be
         //       implemented and other can be derived.
@@ -154,8 +167,11 @@ pub impl<T, E> Option<Result<Option<T>, E>> {
 
         // Or defined directly by pattern matching.
         match self {
-            Some(r) => Ok(r?),
-            None => Ok(None),
+            Some(effect) => match effect.branch() {
+                ControlFlow::Continue(output) => TryEffect::from_output(output),
+                ControlFlow::Break(residual) => FromResidual::from_residual(residual),
+            },
+            None => TryEffect::from_output(None),
         }
     }
 }
@@ -166,7 +182,7 @@ pub impl<This> This
 where
     This: Iterator,
 {
-    /// Sequencing operation on [Iterator] type when inner type is `Applicative` or `Monad` like [Result].
+    /// Sequencing operation on [Iterator] type when inner type is `Applicative` or `Monad`.
     /// See [`IterTraversableExt::sequence`] for traverse with identity closure.
     /// Defined by [Conor McBride](https://doi.org/10.1017/S0956796807006326) (2005) in Haskell2010 base
     /// [Data.Traversable](https://hackage.haskell.org/package/base-4.21.0.0/docs/Data-Traversable.html).
@@ -177,7 +193,7 @@ where
     /// class (Functor t, Foldable t) => Traversable t where
     ///   traverse :: Applicative f => (a -> f b) -> t a -> f (t b)
     /// ```
-    /// From this Haskell definition `t` is [Iterator] and `f` is [Result].
+    /// From this Haskell definition `t` is [Iterator] and `f` is the effect that is sequenced.
     ///
     /// # Examples
     ///
@@ -193,10 +209,12 @@ where
     /// assert_eq!(r, Ok(vec![84]));
     /// ```
     #[inline]
-    fn traverse<F, T, R, E>(self, f: F) -> Result<Vec<R>, E>
+    fn traverse<F, T, Effect>(self, f: F) -> WithOutput<Effect, Vec<Effect::Output>>
     where
         This: Iterator<Item = T>,
-        F: FnMut(T) -> Result<R, E>,
+        F: FnMut(T) -> Effect,
+        Effect: TryEffect,
+        Effect::Residual: Residual<Vec<Effect::Output>>,
     {
         // Traverse defined in terms of `sequence`.
         // NOTE: Traversable minimal definition is `traverse` or `sequence` so only one needs to be
@@ -204,12 +222,12 @@ where
         //       https://hackage.haskell.org/package/base-4.21.0.0/docs/Data-Traversable.html
         // self.map(f).sequence()
 
-        // Or defined directly, which is what `sequence` here is anyway: collecting into one
-        // `Result` stops at the first error and sizes the vector from the iterator's own hint.
-        self.map(f).collect()
+        // Or defined directly, which is what `sequence` here is anyway: the walk stops where the
+        // effect stops, and the vector is sized from the iterator's own hint.
+        self.map(f).sequence()
     }
 
-    /// Sequencing operation on [Iterator] type when inner type is `Applicative` or `Monad` like [Result].
+    /// Sequencing operation on [Iterator] type when inner type is `Applicative` or `Monad`.
     /// See [`IterTraversableExt::sequence`] for traverse with identity closure.
     /// Defined by [Conor McBride](https://doi.org/10.1017/S0956796807006326) (2005) in Haskell2010 base
     /// [Data.Traversable](https://hackage.haskell.org/package/base-4.21.0.0/docs/Data-Traversable.html).
@@ -220,7 +238,7 @@ where
     /// class (Functor t, Foldable t) => Traversable t where
     ///   traverse :: Applicative f => (a -> f b) -> t a -> f (t b)
     /// ```
-    /// From this Haskell definition `t` is [Iterator] and `f` is [Result].
+    /// From this Haskell definition `t` is [Iterator] and `f` is the effect that is sequenced.
     ///
     /// # Examples
     ///
@@ -236,10 +254,12 @@ where
     /// assert_eq!(r, Ok(vec![84]));
     /// ```
     #[inline]
-    fn traverse_opt<F, T, R, E>(self, mut f: F) -> Result<Vec<R>, E>
+    fn traverse_opt<F, T, R, Effect>(self, f: F) -> WithOutput<Effect, Vec<R>>
     where
         This: Iterator<Item = T>,
-        F: FnMut(T) -> Result<Option<R>, E>,
+        F: FnMut(T) -> Effect,
+        Effect: TryEffect<Output = Option<R>>,
+        Effect::Residual: Residual<Vec<R>>,
     {
         // Traverse defined in terms of `sequence`.
         // NOTE: Traversable minimal definition is `traverse` or `sequence` so only one needs to be
@@ -247,20 +267,14 @@ where
         //       https://hackage.haskell.org/package/base-4.21.0.0/docs/Data-Traversable.html
         // self.map(f).sequence_opt()
 
-        // Or defined directly by pattern matching.
-        let mut acc = vec![];
-        for x in self {
-            if let Some(r) = f(x)? {
-                acc.push(r);
-            }
-        }
-        Ok(acc)
+        self.map(f).sequence_opt()
     }
 
     /// The same as [`IterTraversableExt::traverse_opt`], but accepts more general result
     /// value as `Iterator`.
     ///
-    /// NOTE: The end goal is to have general definition like this for traverse/sequence of Traversable interface (API).
+    /// NOTE: The effect is general here. The structure walked is still [Iterator] into [Vec], which
+    /// is the remaining half of a general Traversable interface (API).
     ///
     /// # Examples
     ///
@@ -276,10 +290,12 @@ where
     /// assert_eq!(r, Ok(vec![1, 2, 2, 4, 3, 6]));
     /// ```
     #[inline]
-    fn traverse_iter<F, T, I, R, E>(self, mut f: F) -> Result<Vec<R>, E>
+    fn traverse_iter<F, T, I, R, Effect>(self, f: F) -> WithOutput<Effect, Vec<R>>
     where
         This: Iterator<Item = T>,
-        F: FnMut(T) -> Result<I, E>,
+        F: FnMut(T) -> Effect,
+        Effect: TryEffect<Output = I>,
+        Effect::Residual: Residual<Vec<R>>,
         I: IntoIterator<Item = R>,
     {
         // Traverse defined in terms of `sequence`.
@@ -288,15 +304,10 @@ where
         //       https://hackage.haskell.org/package/base-4.21.0.0/docs/Data-Traversable.html
         // self.map(f).sequence_iter()
 
-        // Or defined directly by pattern matching.
-        let mut acc = vec![];
-        for x in self {
-            acc.extend(f(x)?);
-        }
-        Ok(acc)
+        self.map(f).sequence_iter()
     }
 
-    /// Sequencing operation on [Iterator] type when inner type is `Applicative` or `Monad` like [Result].
+    /// Sequencing operation on [Iterator] type when inner type is `Applicative` or `Monad`.
     /// See [`IterTraversableExt::sequence`] for traverse with identity closure.
     /// Defined by [Conor McBride](https://doi.org/10.1017/S0956796807006326) (2005) in Haskell2010 base
     /// [Data.Traversable](https://hackage.haskell.org/package/base-4.21.0.0/docs/Data-Traversable.html).
@@ -307,7 +318,7 @@ where
     /// class (Functor t, Foldable t) => Traversable t where
     ///   traverse :: Applicative f => (a -> f b) -> t a -> f (t b)
     /// ```
-    /// From this Haskell definition `t` is [Iterator] and `f` is [Result].
+    /// From this Haskell definition `t` is [Iterator] and `f` is the effect that is sequenced.
     ///
     /// # Examples
     ///
@@ -319,9 +330,11 @@ where
     /// assert_eq!(r, Ok(vec![1, 2, 3]));
     /// ```
     #[inline]
-    fn sequence<T, E>(self) -> Result<Vec<T>, E>
+    fn sequence<Effect>(self) -> WithOutput<Effect, Vec<Effect::Output>>
     where
-        This: Iterator<Item = Result<T, E>>,
+        This: Iterator<Item = Effect>,
+        Effect: TryEffect,
+        Effect::Residual: Residual<Vec<Effect::Output>>,
     {
         // Sequence defined in terms of `traverse`.
         // NOTE: Traversable minimal definition is `traverse` or `sequence` so only one needs to be
@@ -329,10 +342,18 @@ where
         //       https://hackage.haskell.org/package/base-4.21.0.0/docs/Data-Traversable.html
         // self.traverse(identity)
 
-        self.collect()
+        let mut collected = Vec::with_capacity(self.size_hint().0);
+        for effect in self {
+            match effect.branch() {
+                ControlFlow::Continue(output) => collected.push(output),
+                ControlFlow::Break(residual) => return FromResidual::from_residual(residual),
+            }
+        }
+
+        TryEffect::from_output(collected)
     }
 
-    /// Sequencing operation on [Iterator] type when inner type is `Applicative` or `Monad` like [Result].
+    /// Sequencing operation on [Iterator] type when inner type is `Applicative` or `Monad`.
     /// See [`IterTraversableExt::sequence`] for traverse with identity closure.
     /// Defined by [Conor McBride](https://doi.org/10.1017/S0956796807006326) (2005) in Haskell2010 base
     /// [Data.Traversable](https://hackage.haskell.org/package/base-4.21.0.0/docs/Data-Traversable.html).
@@ -343,7 +364,7 @@ where
     /// class (Functor t, Foldable t) => Traversable t where
     ///   traverse :: Applicative f => (a -> f b) -> t a -> f (t b)
     /// ```
-    /// From this Haskell definition `t` is [Iterator] and `f` is [Result].
+    /// From this Haskell definition `t` is [Iterator] and `f` is the effect that is sequenced.
     ///
     /// # Examples
     ///
@@ -355,9 +376,11 @@ where
     /// assert_eq!(r, Ok(vec![1, 2, 3]));
     /// ```
     #[inline]
-    fn sequence_opt<T, E>(self) -> Result<Vec<T>, E>
+    fn sequence_opt<R, Effect>(self) -> WithOutput<Effect, Vec<R>>
     where
-        This: Iterator<Item = Result<Option<T>, E>>,
+        This: Iterator<Item = Effect>,
+        Effect: TryEffect<Output = Option<R>>,
+        Effect::Residual: Residual<Vec<R>>,
     {
         // Sequence (opt) defined in terms of `traverse` (opt).
         // NOTE: Traversable minimal definition is `traverse` or `sequence` so only one needs to be
@@ -365,19 +388,22 @@ where
         //       https://hackage.haskell.org/package/base-4.21.0.0/docs/Data-Traversable.html
         // self.traverse_opt(identity)
 
-        let mut acc = vec![];
-        for x in self {
-            if let Some(r) = x? {
-                acc.push(r);
+        let mut collected = Vec::new();
+        for effect in self {
+            match effect.branch() {
+                ControlFlow::Continue(output) => collected.extend(output),
+                ControlFlow::Break(residual) => return FromResidual::from_residual(residual),
             }
         }
-        Ok(acc)
+
+        TryEffect::from_output(collected)
     }
 
     /// The same as [`IterTraversableExt::sequence_opt`], but accepts more general result
     /// value as `Iterator`.
     ///
-    /// NOTE: The end goal is to have general definition like this for traverse/sequence of Traversable interface (API).
+    /// NOTE: The effect is general here. The structure walked is still [Iterator] into [Vec], which
+    /// is the remaining half of a general Traversable interface (API).
     ///
     /// # Examples
     ///
@@ -393,10 +419,12 @@ where
     /// assert_eq!(r, Ok(vec![1, 2, 3]));
     /// ```
     #[inline]
-    fn sequence_iter<T, I, E>(self) -> Result<Vec<T>, E>
+    fn sequence_iter<R, I, Effect>(self) -> WithOutput<Effect, Vec<R>>
     where
-        This: Iterator<Item = Result<I, E>>,
-        I: IntoIterator<Item = T>,
+        This: Iterator<Item = Effect>,
+        Effect: TryEffect<Output = I>,
+        Effect::Residual: Residual<Vec<R>>,
+        I: IntoIterator<Item = R>,
     {
         // Sequence defined in terms of `traverse`.
         // NOTE: Traversable minimal definition is `traverse` or `sequence` so only one needs to be
@@ -405,11 +433,15 @@ where
         // self.traverse_iter(identity)
 
         // Or defined directly by pattern matching.
-        let mut acc = vec![];
-        for x in self {
-            acc.extend(x?);
+        let mut collected = Vec::new();
+        for effect in self {
+            match effect.branch() {
+                ControlFlow::Continue(output) => collected.extend(output),
+                ControlFlow::Break(residual) => return FromResidual::from_residual(residual),
+            }
         }
-        Ok(acc)
+
+        TryEffect::from_output(collected)
     }
 }
 
@@ -551,6 +583,55 @@ mod tests {
             assert_eq!(res_vec, expected);
             assert_eq!(res_opt, expected);
         }
+    }
+}
+
+#[cfg(test)]
+mod effect_instance_tests {
+    use super::*;
+
+    #[test]
+    fn an_option_effect_sequences_exactly_as_a_result_does() {
+        assert_eq!(Some(42).traverse(|x| Some(x + x)), Some(Some(84)));
+        assert_eq!(Some(42).traverse(|_: i32| Option::<i32>::None), None);
+        assert_eq!(Option::<i32>::None.traverse(|_| Option::<i32>::None), Some(None));
+
+        assert_eq!(Some(Some(42)).sequence(), Some(Some(42)));
+        assert_eq!(Some(Option::<i32>::None).sequence(), None);
+        assert_eq!(Option::<Option<i32>>::None.sequence(), Some(None));
+
+        assert_eq!([1, 2, 3].into_iter().traverse(|x| Some(x + x)), Some(vec![2, 4, 6]));
+        assert_eq!([1, 2, 3].into_iter().traverse(|_: i32| Option::<i32>::None), None);
+        assert_eq!([Some(1), Some(2)].into_iter().sequence(), Some(vec![1, 2]));
+        assert_eq!([Some(1), None].into_iter().sequence(), None);
+    }
+
+    #[test]
+    fn an_option_effect_filters_and_flattens_the_same_way() {
+        assert_eq!(Some(42).traverse_opt(|x| Some(Some(x + x))), Some(Some(84)));
+        assert_eq!(Some(42).traverse_opt(|_: i32| Some(Option::<i32>::None)), Some(None));
+        assert_eq!(Some(Some(Some(42))).sequence_opt(), Some(Some(42)));
+
+        let filtered = [Some(1), None, Some(3)].into_iter().traverse_opt(Some);
+        assert_eq!(filtered, Some(vec![1, 3]));
+
+        let flattened = [1, 2].into_iter().traverse_iter(|x| Some(vec![x, x + x]));
+        assert_eq!(flattened, Some(vec![1, 2, 2, 4]));
+
+        let stopped = [Some(vec![1]), None].into_iter().sequence_iter();
+        assert_eq!(stopped, None);
+    }
+
+    #[test]
+    fn a_walk_stops_where_the_effect_stops() {
+        let mut seen = 0;
+        let stopped: Result<Vec<i32>, ()> = [1, 2, 3].into_iter().traverse(|value| {
+            seen += 1;
+            if value == 2 { Err(()) } else { Ok(value) }
+        });
+
+        assert_eq!(stopped, Err(()));
+        assert_eq!(seen, 2, "the third element is never handed to the closure");
     }
 }
 

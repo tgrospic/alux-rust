@@ -16,24 +16,25 @@ sequenceA = traverse id
 
 [Jeremy Gibbons](https://www.cs.ox.ac.uk/jeremy.gibbons/) and [Bruno C. d. S. Oliveira](https://i.cs.hku.hk/~bruno/) later showed in [The essence of the Iterator pattern](https://www.cs.ox.ac.uk/jeremy.gibbons/publications/iterator.pdf) (Journal of Functional Programming 19(3–4):377–402, 2009, [doi:10.1017/S0956796809007291](https://doi.org/10.1017/S0956796809007291)) that this one operator is what the iterator pattern is reaching for: walking a structure, doing something effectful at each element, and rebuilding the structure with the effects sequenced.
 
-`t` is the traversable structure and `f` is the applicative effect. Rust cannot quantify over `t`, so this crate provides the two instances worth having — `Option` and iterators — with `f` fixed to `Result`, whose applicative is the short-circuiting one. So: a function returning `Result` becomes composable inside an `Option` or an iterator, sequencing the `Result` effect while preserving the shape and order of the outer value. The suffix identifies the wrapper produced inside `Result`:
+`t` is the traversable structure and `f` is the applicative effect. Rust cannot quantify over `t`, so this crate provides the two instances worth having: `Option` and iterators. `f` is any short-circuiting effect, which on stable Rust means `Result` and `Option`. So: a function returning either becomes composable inside an `Option` or an iterator, sequencing that effect while preserving the shape and order of the outer value. The suffix identifies the wrapper the mapping states inside the effect:
 
-| Method | Mapping result | Meaning |
+| Method | Mapping states | Meaning |
 | --- | --- | --- |
-| `traverse` | `Result<R, E>` | Maps each input to exactly one output. |
-| `traverse_opt` | `Result<Option<R>, E>` | Maps each input to zero or one output. |
-| `traverse_iter` | `Result<I, E>` where `I: IntoIterator` | Maps each input to zero or many outputs. |
+| `traverse` | `R` | Maps each input to exactly one output. |
+| `traverse_opt` | `Option<R>` | Maps each input to zero or one output. |
+| `traverse_iter` | `I` where `I: IntoIterator` | Maps each input to zero or many outputs. |
 
-`sequence`, `sequence_opt`, and `sequence_iter` are the corresponding identity mappings for values that already contain `Result`:
+`sequence`, `sequence_opt`, and `sequence_iter` are the corresponding identity mappings for values that already carry the effect:
 
 - `Some(42).traverse(|x| Ok(x + 1)) == Ok(Some(43))`
+- `Some(42).traverse(|x| Some(x + 1)) == Some(Some(43))`
 - `Some(Ok(42)).sequence() == Ok(Some(42))`
 - `[1, 2].traverse(|x| Ok(x + 1)) == Ok(vec![2, 3])`
 - `[1, 2].traverse_opt(|x| Ok(Some(x))) == Ok(vec![1, 2])`
 - `[1, 2].traverse_iter(|x| Ok([x])) == Ok(vec![1, 2])`
 - `[Ok(None), Ok(Some(1))].sequence_opt() == Ok(vec![1])`
 
-Which method applies is decided by what the mapping states inside `Result`, and what comes out is decided by what was traversed:
+Which method applies is decided by what the mapping states inside the effect, and what comes out is decided by what was traversed:
 
 ```text
 Option .traverse/sequence T        ==> Option
@@ -44,14 +45,30 @@ Iter   .traverse/sequence Option   ==> Vec
 Iter   .traverse/sequence Iter     ==> Vec
 ```
 
-Iterator traversal accepts stateful `FnMut` transformations, preserving source order and stopping at the first error.
+Iterator traversal accepts stateful `FnMut` transformations, preserving source order and stopping where the effect stops.
+
+### The effect
+
+What a traversal needs of an effect is one thing: a value that either carries an output onward or stops the walk with what is left. `std::ops::Try` and `std::ops::Residual` state exactly that, and are unstable, so this crate states them itself as `TryEffect` and `Residual` with the same associated names and the same meaning, and implements them for `Result` and `Option`.
+
+Nothing a caller writes mentions either trait. A method states its result as `WithOutput<Effect, Value>`, which is the effect it was handed carrying something else, so the effect comes from the closure or from the value and the result follows from it:
+
+```rust,ignore
+fn traverse<F, Effect>(self, f: F) -> WithOutput<Effect, Option<Effect::Output>>
+where
+    F: FnOnce(T) -> Effect,
+    Effect: TryEffect,
+    Effect::Residual: Residual<Option<Effect::Output>>,
+```
+
+Both traits are sealed. `std::ops::Try` cannot be implemented outside the standard library, so sealing states the same limit now: no impl written against this crate is stranded when the standard traits arrive and these are replaced by them.
 
 The papers state the laws as naturality, identity, and composition: traversal commutes with applicative morphisms, traversal in the identity applicative is `fmap`, and two traversals composed are one traversal in the composed applicative. That last one is why the suffixes are worth having — `traverse_opt` and `traverse_iter` are each a traversal whose inner structure is already composed, so a caller writes one pass where two would nest.
 
 Read in the `Option` and iterator shapes, the laws are:
 
-- traversing `None` performs no effect and returns `Ok(None)`;
-- iterator traversal preserves order and stops at the first error;
+- traversing `None` performs no effect and states the effect carrying `None`;
+- iterator traversal preserves order and stops where the effect stops;
 - optional iterator traversal omits `None` without reordering the remaining values;
 - sequencing equals traversal by the identity function;
 - `traverse_iter` concatenates each successful inner iterator in input order.

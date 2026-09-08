@@ -1,6 +1,6 @@
 [package]
 name = "alux-traversable"
-description = "Traversable operations over Option and iterators, sequencing the Result effect"
+description = "Traversable operations over Option and iterators, sequencing a short-circuiting effect"
 documentation = "https://docs.rs/alux-traversable"
 version = "0.1.1"
 authors.workspace = true
