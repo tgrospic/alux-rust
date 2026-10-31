@@ -261,6 +261,15 @@ impl<Handle> CliDirect<Handle> {
     {
         block_on(self.run_once(program, words))
     }
+
+    /// Runs `program` as the process's command line with the handle itself, writes what it shows,
+    /// and ends the process with its status.
+    pub fn run_main<Program>(self, program: Program) -> !
+    where
+        Program: CliProgramAlg<DirectCompiler<Handle>, Commands = Vec<Entry<Handle>>>,
+    {
+        self.run_once_blocking(program, std::env::args_os()).exit()
+    }
 }
 
 impl<Handle> CliDirect<Handle>
