@@ -68,8 +68,10 @@ fn node(line: &str) -> Exit {
 
 #[test]
 fn runs_the_programs_own_command_with_no_command_word() {
-    // Cargo sets `CARGO_PKG_VERSION_MINOR=1` and `CARGO_PKG_VERSION=0.1.0` for every test it runs.
-    assert_eq!(node("node").stdout, "local dev=true rpc=None peers=[\"0\", \"1\", \"0\"]\n");
+    // Cargo sets `CARGO_PKG_VERSION_MINOR` and `CARGO_PKG_VERSION` for every test it runs, so the
+    // peers are this package's version split at its dots.
+    let peers = env!("CARGO_PKG_VERSION").split('.').collect::<Vec<_>>();
+    assert_eq!(node("node").stdout, format!("local dev=true rpc=None peers={peers:?}\n"));
     // The command line wins over the environment, and each of its words is split too.
     assert_eq!(
         node("node --dev --rpc-addr 127.0.0.1 --peers a.b --peers c").stdout,

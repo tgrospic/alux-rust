@@ -259,7 +259,12 @@ fn handle(
     let (handle_param, handle, handle_bounds) = match (lends_output, mutable_receiver) {
         (true, false) => (None, quote!(&#lifetime_ref Context), quote!(Context: Sync,)),
         (true, true) => (None, quote!(&#lifetime_ref mut Context), quote!(Context: Send,)),
-        (false, _) => (Some(quote!(Handle,)), quote!(Handle), quote!(Handle: #context_bound + Send, Context: Sync,)),
+        // An owned handle's future holds the handle and the context borrowed from it: shared for
+        // `&self`, so the context is `Sync`; exclusive for `&mut self`, so `Send` is enough.
+        (false, false) => {
+            (Some(quote!(Handle,)), quote!(Handle), quote!(Handle: #context_bound + Send, Context: Sync,))
+        }
+        (false, true) => (Some(quote!(Handle,)), quote!(Handle), quote!(Handle: #context_bound + Send, Context: Send,)),
     };
     (context_parameter, receiver, handle_param, handle, handle_bounds)
 }
@@ -821,7 +826,31 @@ mod tests {
         assert!(output.contains("const ARG_NAMES"));
         assert!(output.contains("stringify ! (value)"));
         assert!(output.contains("alux_ext :: ApplyAlg"));
-        assert!(output.contains("Handle : core :: borrow :: Borrow < Context > + Send"), "{output}");
+        assert!(output.contains("Handle : core :: borrow :: Borrow < Context > + Send , Context : Sync"), "{output}");
+    }
+
+    #[test]
+    fn asks_an_owned_handle_for_a_sendable_context_when_the_receiver_is_exclusive() {
+        let output = ext_internal(
+            quote!(name = TallyExt, defunc),
+            quote! {
+                impl<This> This
+                where
+                    This: TallyAlg,
+                {
+                    async fn bump(&mut self) -> u32 { self.next() }
+                }
+            },
+        )
+        .unwrap()
+        .to_string();
+
+        // The future holds the only borrow of the context, so the context need not be shared.
+        assert!(
+            output.contains("Handle : core :: borrow :: BorrowMut < Context > + Send , Context : Send"),
+            "{output}"
+        );
+        assert!(!output.contains("Context : Sync"), "{output}");
     }
 
     #[test]

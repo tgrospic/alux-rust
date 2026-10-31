@@ -241,6 +241,43 @@ mod tests {
         assert_eq!(leaves, ["b", "c"]);
     }
 
+    trait TallyAlg {
+        fn bump(&mut self) -> u32;
+    }
+
+    /// Is `Send` but not `Sync`, as a context holding a `Cell` is.
+    #[derive(Default)]
+    struct Tally(std::cell::Cell<u32>);
+
+    impl TallyAlg for Tally {
+        fn bump(&mut self) -> u32 {
+            self.0.set(self.0.get() + 1);
+            self.0.get()
+        }
+    }
+
+    #[ext(name = TallyExt, defunc)]
+    impl<This> This
+    where
+        This: TallyAlg,
+    {
+        async fn bump_twice(&mut self) -> u32 {
+            self.bump();
+            self.bump()
+        }
+    }
+
+    #[tokio::test]
+    async fn applies_a_mutable_operation_to_an_owned_handle_whose_context_is_not_sync() {
+        fn sent<Running: Send>(running: Running) -> Running {
+            running
+        }
+
+        let operation = BumpTwiceOperation::<Tally>::default();
+        let running = operation.apply(Box::new(Tally::default()), ());
+        assert_eq!(sent(running).await, 2);
+    }
+
     #[tokio::test]
     async fn answers_a_borrowed_output_to_a_borrowed_handle() {
         let buffer = Buffer(vec![1, 2, 3]);
