@@ -34,7 +34,7 @@ where
         self.commands()
             .cmd_root(
                 self.op(Machine::run_node)
-                    .arg("dev", self.named("Development mode").switch().env("CARGO_PKG_VERSION_MINOR"))
+                    .arg("dev", self.named("Development mode").switch().env("NEXTEST"))
                     .arg("rpc_addr", self.named("RPC address").optional())
                     .arg("peers", self.named("Peers to dial").many().env("CARGO_PKG_VERSION").delimiter('.')),
             )
@@ -43,7 +43,7 @@ where
 
     /// Declares the same command line in A-normal form: each part bound once, then named.
     fn node_anf_cli<Machine>(&self) {
-        let dev = self.named("Development mode").switch().env("CARGO_PKG_VERSION_MINOR");
+        let dev = self.named("Development mode").switch().env("NEXTEST");
         let rpc_addr = self.named("RPC address").optional();
         let peers = self.named("Peers to dial").many().env("CARGO_PKG_VERSION").delimiter('.');
         let run = self.op(Machine::run_node).arg("dev", dev).arg("rpc_addr", rpc_addr).arg("peers", peers);
@@ -68,8 +68,8 @@ fn node(line: &str) -> Exit {
 
 #[test]
 fn runs_the_programs_own_command_with_no_command_word() {
-    // Cargo sets `CARGO_PKG_VERSION_MINOR` and `CARGO_PKG_VERSION` for every test it runs, so the
-    // peers are this package's version split at its dots.
+    // nextest sets `NEXTEST=1` and Cargo sets `CARGO_PKG_VERSION` for every test it runs, so the
+    // switch is on and the peers are this package's version split at its dots.
     let peers = env!("CARGO_PKG_VERSION").split('.').collect::<Vec<_>>();
     assert_eq!(node("node").stdout, format!("local dev=true rpc=None peers={peers:?}\n"));
     // The command line wins over the environment, and each of its words is split too.
@@ -89,7 +89,7 @@ fn answers_version_and_helps_the_programs_own_command_with_the_others() {
     assert!(help.contains("check") && help.contains("--version"), "{help}");
     // The switch lists the variable it falls back to, and the list its delimiter.
     let line = |spelling: &str| help.lines().find(|line| line.contains(spelling)).unwrap_or_default().to_owned();
-    assert!(line("--dev").ends_with("Development mode [env: CARGO_PKG_VERSION_MINOR]"), "{help}");
+    assert!(line("--dev").ends_with("Development mode [env: NEXTEST]"), "{help}");
     // The delimiter here is `.`, so the list reads `<peers>.` followed by `...`.
     assert!(line("--peers").contains("--peers <peers>...."), "{help}");
     // A value is named as the command line spells it.

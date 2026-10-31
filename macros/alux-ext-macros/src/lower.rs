@@ -215,11 +215,15 @@ fn bounds_this(predicate: &WherePredicate) -> bool {
 ///
 /// Only a binding of a plain name with no type is read; any other statement is kept as written. The
 /// value keeps the author's tokens, so diagnostics and editor navigation still point at it.
-fn inline_bindings(block: &mut Block) {
+///
+/// The binding's name and its uses are answered too, as inert statements that keep their tokens: an
+/// editor resolves each use to the binding, which the inlined form alone no longer contains.
+fn inline_bindings(block: &mut Block) -> Vec<Stmt> {
     let mut bound: Vec<(Ident, Expr)> = Vec::new();
+    let mut uses: Vec<Vec<Ident>> = Vec::new();
     let mut kept = Vec::new();
     for mut statement in std::mem::take(&mut block.stmts) {
-        Substitute(&bound).visit_stmt_mut(&mut statement);
+        Substitute { bound: &bound, uses: &mut uses }.visit_stmt_mut(&mut statement);
         match statement {
             Stmt::Local(Local {
                 pat: Pat::Ident(PatIdent { ident, by_ref: None, mutability: None, subpat: None, .. }),
@@ -228,11 +232,27 @@ fn inline_bindings(block: &mut Block) {
                 ..
             }) if attrs.is_empty() => {
                 bound.push((ident, *expr));
+                uses.push(Vec::new());
             }
             statement => kept.push(statement),
         }
     }
     block.stmts = kept;
+    // Each binding in a block of its own, so its name shadows nothing the expansion names.
+    bound
+        .iter()
+        .zip(&uses)
+        .map(|((name, _), uses)| {
+            parse_quote! {
+                {
+                    #[allow(unused_variables, clippy::let_unit_value)]
+                    let #name = ();
+                    #[allow(clippy::let_unit_value)]
+                    let _ = (#(#uses,)*);
+                }
+            }
+        })
+        .collect()
 }
 
 /// Writes the program a declaration ends in in A-normal form: every argument that is itself a
@@ -263,17 +283,22 @@ fn hoist_arguments(expression: &mut Expr, bindings: &mut Vec<Stmt>) {
     }
 }
 
-/// Replaces each use of a bound name by its value, the latest binding of a name winning.
-struct Substitute<'a>(&'a [(Ident, Expr)]);
+/// Replaces each use of a bound name by its value, the latest binding of a name winning, and
+/// records the use's token against its binding.
+struct Substitute<'a> {
+    bound: &'a [(Ident, Expr)],
+    uses: &'a mut Vec<Vec<Ident>>,
+}
 
 impl VisitMut for Substitute<'_> {
     fn visit_expr_mut(&mut self, expression: &mut Expr) {
         if let Expr::Path(path) = expression
             && path.qself.is_none()
             && let Some(name) = path.path.get_ident()
-            && let Some((_, value)) = self.0.iter().rev().find(|(bound, _)| bound == name)
+            && let Some(index) = self.bound.iter().rposition(|(bound, _)| bound == name)
         {
-            *expression = value.clone();
+            self.uses[index].push(name.clone());
+            *expression = self.bound[index].1.clone();
             return;
         }
         syn::visit_mut::visit_expr_mut(self, expression);
@@ -325,15 +350,16 @@ where
     // The same method read again as the program's compilation: nested programs first, then the
     // evidence its own declarations require, then the builder that replaces `self`.
     let mut compiler = method.clone();
-    if Backend::READS_BINDINGS {
-        inline_bindings(&mut compiler.block);
-    }
+    let navigation = if Backend::READS_BINDINGS { inline_bindings(&mut compiler.block) } else { Vec::new() };
     let mut subprograms = Subprograms::new(Backend::ROOT, Backend::NESTED_SUFFIX);
     subprograms.visit_block_mut(&mut compiler.block);
     let declared = Backend::prepare_declarations(&mut compiler, defaults);
     ReplaceSelf.visit_block_mut(&mut compiler.block);
     // Every expansion is in A-normal form, whichever transport it declares.
     normalize(&mut compiler.block);
+    // Only the compiled copy names the bindings, after every rewrite that reads the declaration.
+    let program_at = compiler.block.stmts.len().saturating_sub(1);
+    compiler.block.stmts.splice(program_at..program_at, navigation);
 
     // The bounds move to the interpretation; the parameters they introduce stay.
     let method_predicates = predicates(&compiler.sig.generics);

@@ -982,4 +982,34 @@ mod tests {
         assert!(output.contains("This : :: alux_cli :: CliNestAlg"));
         assert!(output.contains("builder . program"));
     }
+
+    #[test]
+    fn keeps_each_binding_and_its_uses_for_an_editor_to_resolve() {
+        let output = cli_program_defunc_internal(
+            quote!(name = NodeCliExt),
+            quote! {
+                pub impl<This> This
+                where
+                    This: CliCommandsAlg,
+                {
+                    fn node_cli<Machine>(&self) {
+                        let dev = self.named("Development mode").switch();
+                        let start = self.op(Machine::start).arg("dev", dev);
+                        self.commands().cmd("start", start)
+                    }
+                }
+            },
+        )
+        .unwrap()
+        .to_string();
+
+        // The declaration still lowers through the inlined form.
+        assert!(output.contains("builder . named (\"Development mode\") . switch ()"), "{output}");
+        // Each binding is kept inert, in a block of its own, with every use of it.
+        assert!(output.contains("let dev = () ; # [allow (clippy :: let_unit_value)] let _ = (dev ,) ;"), "{output}");
+        assert!(
+            output.contains("let start = () ; # [allow (clippy :: let_unit_value)] let _ = (start ,) ;"),
+            "{output}"
+        );
+    }
 }
