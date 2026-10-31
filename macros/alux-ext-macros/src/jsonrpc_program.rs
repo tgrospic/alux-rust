@@ -146,12 +146,13 @@ impl ProgramBackendAlg for JsonRpcBackend {
     }
 
     fn read_link(call: &ExprMethodCall) -> Option<TokenStream> {
-        let arguments = call.args.iter().collect::<Vec<_>>();
-        match (call.method.to_string().as_str(), arguments.as_slice()) {
-            // A declared method is one method on its own, under the name it answers to.
-            ("method", [name, declaration]) => Some(quote!(#declaration.declare(#name))),
-            // A merged program is already one program, so it states itself.
-            ("merge", [program]) => Some(quote!(#program.into_program())),
+        // Each link is the authored call itself, on an empty program, so the method keeps the
+        // author's token: an editor reading the expansion finds `method` or `merge` where it is
+        // defined.
+        let method = &call.method;
+        let arguments = &call.args;
+        match (method.to_string().as_str(), arguments.len()) {
+            ("method", 2) | ("merge", 1) => Some(quote!(builder.methods().#method(#arguments).into_program())),
             _ => None,
         }
     }
@@ -231,7 +232,8 @@ mod tests {
         assert!(output.contains("CompileJsonRpcProgram :: compile_jsonrpc_program"));
         // One registration per method, merged into the collection, and no nested program type.
         assert_eq!(output.matches("jsonrpc_merge").count(), 2);
-        assert_eq!(output.matches("declare").count(), 2);
+        // Each link is the authored `method` call on an empty program, so its token stays navigable.
+        assert_eq!(output.matches("builder . methods () . method (\"status").count(), 2);
         assert!(!output.contains("let program ="), "the methods were left as one nested type");
     }
 
