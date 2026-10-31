@@ -7,7 +7,8 @@ pub enum Arity {
     Optional,
     /// Any number of values, in order: `Vec` of them.
     Many,
-    /// No value; whether it occurs: `bool`.
+    /// Whether it is on: `bool`. Given bare it is on; a long spelling may state a truth either way,
+    /// `--dev=false`, except as an alternative of a sum, which is chosen by its spelling alone.
     Presence,
     /// A value written only in the option's own word, or none: `-i`, `-i.bak`, `--in-place=.bak`.
     /// `Option<Option<_>>`: whether it occurs, and the value it was given.

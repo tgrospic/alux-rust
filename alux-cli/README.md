@@ -145,7 +145,7 @@ where
 }
 ```
 
-A source that cannot supply its argument does not compile once the program is: a missing or extra source, a source of the wrong shape for its argument (`.many()` for a `String`), and a switch with a `.default(..)`. A switch is turned on by its spelling and may fall back to `.env(..)` only.
+A source that cannot supply its argument does not compile once the program is: a missing or extra source, a source of the wrong shape for its argument (`.many()` for a `String`), and a switch with a `.default(..)`. A switch is turned on by its spelling, `--pinned`, and its long spelling may state a truth either way, `--pinned=false` or `--pinned=OFF`, so the command line can turn off what the environment turned on. It may fall back to `.env(..)` only, and a variable set to nothing leaves it off. A truth is `true`/`false`, `t`/`f`, `yes`/`no`, `y`/`n`, `on`/`off`, or `1`/`0`, in any case. An alternative of a sum is chosen by its spelling alone and takes no value.
 
 Each `.arg("name", source)` names the argument it declares. The names are checked against the operation's own, in order, when the program compiles, so two arguments of one type cannot be swapped unnoticed:
 

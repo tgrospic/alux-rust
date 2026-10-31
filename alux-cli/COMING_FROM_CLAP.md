@@ -71,7 +71,11 @@ More spellings for one argument, an operand that assigns one, and a bare number:
 
 // alux-cli
 .arg("recursive", self.named("Copy directories recursively").switch().short('r').short_aliases(&['R']))
+```
 
+A `SetTrue` flag in `clap` can only turn itself on, so a flag its `env` turned on stays on. A switch here also takes a truth after `=`, as `clap`'s `BoolishValueParser` reads one, so `--recursive=false` turns it off whatever the environment says.
+
+```rs
 // clap: no spelling for `dd if=FILE`; it takes the operands and splits them itself
 
 // alux-cli: `if=FILE` assigns the argument, and takes no positional place

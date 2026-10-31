@@ -6,7 +6,7 @@
 //! assigning words to arguments, skipping global options before a command's path, and printing a
 //! canonical command line all read words by the same rules.
 
-use alux_cli::{ArgumentInfo, Arity, Conventions, SourceInfo};
+use alux_cli::{ArgumentInfo, Arity, Conventions, Part, SourceInfo};
 use std::ffi::{OsStr, OsString};
 
 /// Places something read in the words: the word, by index, and the byte within it.
@@ -235,7 +235,10 @@ fn long<'a>(
         .ok_or_else(|| Unread { byte: 0, kind: ParseErrorKind::Unknown(spelled.clone()) })?;
     let given = match (argument.arity, value) {
         (Arity::Presence | Arity::OptionalValue, None) => Given::Switch,
-        (Arity::Presence, Some(_)) => return Err(Unread { byte: 0, kind: ParseErrorKind::SwitchValue(spelled) }),
+        // An alternative of a sum is chosen by its spelling; any other switch may state a truth.
+        (Arity::Presence, Some(_)) if matches!(argument.part_of, Some(Part::Sum(_))) => {
+            return Err(Unread { byte: 0, kind: ParseErrorKind::SwitchValue(spelled) });
+        }
         (_, Some(value)) => Given::Attached(value),
         (_, None) => Given::Next(spelled),
     };
@@ -327,8 +330,8 @@ impl CommandLineAlg for Printed {
             return;
         }
         let mut spelling = Self::spelling(argument);
-        // An optional value is only read from the option's own word.
-        if argument.arity == Arity::OptionalValue {
+        // An optional value, and a switch's truth, is only read from the option's own word.
+        if matches!(argument.arity, Arity::OptionalValue | Arity::Presence) {
             spelling.push("=");
             spelling.push(value);
             self.options.push(spelling);

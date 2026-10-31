@@ -23,6 +23,11 @@ where
     fn check(&self, file: String) -> String {
         format!("checked {file}")
     }
+
+    /// Reports whether it is quiet.
+    fn quiet(&self, quiet: bool) -> String {
+        format!("quiet={quiet}")
+    }
 }
 
 #[ext(name = NodeCliExt, defunc(via = cli))]
@@ -39,6 +44,10 @@ where
                     .arg("peers", self.named("Peers to dial").many().env("CARGO_PKG_VERSION").delimiter('.')),
             )
             .cmd("check", self.op(Machine::check).arg("file", self.positional("Configuration file")))
+            .cmd(
+                "quiet",
+                self.op(Machine::quiet).arg("quiet", self.named("Quiet").switch().env("CARGO_PKG_VERSION_PRE")),
+            )
     }
 
     /// Declares the same command line in A-normal form: each part bound once, then named.
@@ -48,7 +57,8 @@ where
         let peers = self.named("Peers to dial").many().env("CARGO_PKG_VERSION").delimiter('.');
         let run = self.op(Machine::run_node).arg("dev", dev).arg("rpc_addr", rpc_addr).arg("peers", peers);
         let check = self.op(Machine::check).arg("file", self.positional("Configuration file"));
-        self.commands().cmd_root(run).cmd("check", check)
+        let quiet = self.op(Machine::quiet).arg("quiet", self.named("Quiet").switch().env("CARGO_PKG_VERSION_PRE"));
+        self.commands().cmd_root(run).cmd("check", check).cmd("quiet", quiet)
     }
 }
 
@@ -108,4 +118,20 @@ fn reads_a_declaration_in_a_normal_form_as_its_nested_form() {
     {
         assert_eq!(anf(line), node(line), "{line}");
     }
+}
+
+#[test]
+fn turns_a_switch_off_as_its_spelling_or_an_empty_variable_says() {
+    let peers = env!("CARGO_PKG_VERSION").split('.').collect::<Vec<_>>();
+    let dev = |line: &str| node(line).stdout.replace(&format!(" rpc=None peers={peers:?}\n"), "");
+    // A long spelling states a truth, in any case, over `NEXTEST=1`.
+    assert_eq!(dev("node --dev=false"), "local dev=false");
+    assert_eq!(dev("node --dev=OFF"), "local dev=false");
+    assert_eq!(dev("node --dev=0"), "local dev=false");
+    assert_eq!(dev("node --dev=On"), "local dev=true");
+    assert_eq!(dev("node --dev"), "local dev=true");
+    assert_eq!(node("node --dev=maybe").status, 2);
+    // Cargo sets `CARGO_PKG_VERSION_PRE` to nothing for a release, which states nothing.
+    assert_eq!(node("node quiet").stdout, "quiet=false\n");
+    assert_eq!(node("node quiet --quiet").stdout, "quiet=true\n");
 }

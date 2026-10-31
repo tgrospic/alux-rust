@@ -194,13 +194,14 @@ text_words!(
     usize
 );
 
-/// A switch's own spelling, an empty word, is on; a word from the environment is a truth:
-/// `true`, `false`, `1`, or `0`.
+/// A switch's bare spelling, an empty word, is on; any other word is a truth, in any case, as `clap`
+/// reads one: `true`/`false`, `t`/`f`, `yes`/`no`, `y`/`n`, `on`/`off`, or `1`/`0`.
 impl DirectWord for bool {
     fn direct_word(word: &OsStr) -> Result<Self, String> {
-        match word.to_str() {
-            Some("" | "true" | "1") => Ok(true),
-            Some("false" | "0") => Ok(false),
+        let truth = word.to_str().map(str::to_ascii_lowercase);
+        match truth.as_deref() {
+            Some("" | "true" | "t" | "yes" | "y" | "on" | "1") => Ok(true),
+            Some("false" | "f" | "no" | "n" | "off" | "0") => Ok(false),
             _ => Err(format!("`{}` is not true or false", word.to_string_lossy())),
         }
     }

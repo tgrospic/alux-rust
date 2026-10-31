@@ -285,6 +285,9 @@ fn runs_commands_with_every_spelling() {
     assert_eq!(notes(&store, "notes list"), out("milk\nbread #shop #today\n-eggs\n"));
     assert_eq!(notes(&store, "notes list -vn 2"), out("1. milk\n2. bread #shop #today\n"));
     assert_eq!(notes(&store, "notes list --limit=1 --verbose"), out("1. milk\n"));
+    // A switch's long spelling may state a truth, in any case, either way.
+    assert_eq!(notes(&store, "notes list --limit=1 --verbose=yes"), out("1. milk\n"));
+    assert_eq!(notes(&store, "notes list --limit=1 --verbose=OFF"), out("milk\n"));
     assert_eq!(notes(&store, "notes remove 1"), out(""));
     assert_eq!(notes(&store, "notes list"), out("bread #shop #today\n-eggs\n"));
 }
@@ -388,10 +391,7 @@ fn rejects_words_that_do_not_make_the_command() {
     assert_eq!(notes(&store, "notes add a b"), usage("unexpected argument `b`", "Usage: notes add [options] <text>\n"));
     assert_eq!(notes(&store, "notes list -x"), usage("unknown option `-x`", "Usage: notes list [options]\n"));
     assert_eq!(notes(&store, "notes list -n"), usage("`-n` needs a value", "Usage: notes list [options]\n"));
-    assert_eq!(
-        notes(&store, "notes list --verbose=1"),
-        usage("`--verbose` takes no value", "Usage: notes list [options]\n")
-    );
+    assert_eq!(notes(&store, "notes list --verbose=maybe").status, 2);
     // As in `getopt`, `=` is no separator for a short option, so it is the next letter.
     assert_eq!(
         notes(&store, "notes list -v=1"),

@@ -1,3 +1,4 @@
+use crate::command::is_alternative;
 use alux_cli::{ArgumentInfo, Arity, CliWordAlg, CliWordsAlg, SourceInfo};
 use clap::ArgMatches;
 use std::ffi::{OsStr, OsString};
@@ -23,8 +24,8 @@ impl CliWordsAlg for ClapWords {
 
     fn cli_words(&self, argument: &ArgumentInfo) -> Vec<OsString> {
         let id = id(argument);
-        if argument.arity == Arity::Presence {
-            // A switch is counted; each occurrence is the word `clap` reads as on.
+        if argument.arity == Arity::Presence && is_alternative(argument) {
+            // An alternative is counted; each occurrence is the word `clap` reads as on.
             let count = self.0.try_get_one::<u8>(&id).ok().flatten().copied().unwrap_or(0);
             return vec![OsString::from("true"); usize::from(count)];
         }

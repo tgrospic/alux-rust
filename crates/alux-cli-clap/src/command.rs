@@ -110,7 +110,15 @@ fn arg(argument: &ArgumentInfo, global: bool) -> Arg {
         }
     };
     arg = match argument.arity {
-        Arity::Presence => arg.action(ArgAction::Count),
+        // An alternative of a sum is chosen by its spelling, and only counted.
+        Arity::Presence if is_alternative(argument) => arg.action(ArgAction::Count),
+        // Any other switch may state a truth after `=`; given bare, it is on.
+        Arity::Presence => arg
+            .action(ArgAction::Append)
+            .num_args(0..=1)
+            .require_equals(true)
+            .default_missing_value("true")
+            .value_name("BOOL"),
         Arity::One | Arity::Optional => arg.action(ArgAction::Set).value_name(value_name(argument)),
         Arity::Many => arg.action(ArgAction::Append).value_name(value_name(argument)),
         // clap reads an optional value after `=` only, and a bare occurrence as the empty word.
@@ -122,7 +130,7 @@ fn arg(argument: &ArgumentInfo, global: bool) -> Arg {
             .value_name(value_name(argument)),
     };
     // A value is read as its raw word, whatever its bytes, and decoded by the argument's own type.
-    if argument.arity != Arity::Presence {
+    if !(argument.arity == Arity::Presence && is_alternative(argument)) {
         arg = arg.value_parser(clap::builder::OsStringValueParser::new());
     }
     // A list one word can give is split by `clap` as it reads the command line.
@@ -140,4 +148,9 @@ fn arg(argument: &ArgumentInfo, global: bool) -> Arg {
 /// The option an operand assigning `name` is read as by `clap`: one no declaration spells.
 pub(crate) fn assigned_long(name: &str) -> String {
     format!("assign-{name}")
+}
+
+/// Whether an argument is an alternative of a sum, which its spelling alone chooses.
+pub(crate) fn is_alternative(argument: &ArgumentInfo) -> bool {
+    matches!(argument.part_of, Some(Part::Sum(_)))
 }

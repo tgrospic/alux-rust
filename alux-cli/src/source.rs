@@ -534,8 +534,10 @@ where
     words.iter().map(|word| decoder.cli_word(word).map_err(|error| CliArgumentError::Word(name, error))).collect()
 }
 
-/// A switch, and a switch read from the environment as well: on when given, else as the variable
-/// says. Its own spelling, which an interpreter answers as an empty word, decodes on.
+/// A switch, and a switch read from the environment as well: as the command line says, else as the
+/// variable says, else off. Its bare spelling, which an interpreter answers as an empty word,
+/// decodes on, and a long spelling may state a truth either way: `--dev=false`. A variable set to
+/// nothing states nothing, so a cleared variable leaves the switch off.
 macro_rules! switches {
     ($($mode:ident),*) => {
         $(
@@ -548,6 +550,7 @@ macro_rules! switches {
             impl<Decoder, Error> CliSourceDecode<bool, Decoder, Error> for NamedSource<$mode, Switch>
             where
                 Decoder: CliWordsAlg + CliWordAlg<bool, Decoder::Word, Error = Error>,
+                Decoder::Word: AsRef<OsStr>,
             {
                 fn cli_decode_source(
                     &self,
@@ -555,7 +558,11 @@ macro_rules! switches {
                     decoder: &Decoder,
                 ) -> Result<bool, CliArgumentError<Error>> {
                     let argument = next(arguments);
-                    let words = words(argument, decoder);
+                    let mut words = decoder.cli_words(argument);
+                    if words.is_empty() {
+                        let env = argument.fallback.env.and_then(|name| decoder.cli_env(name));
+                        words.extend(env.filter(|word| !word.as_ref().is_empty()));
+                    }
                     if words.is_empty() { Ok(false) } else { one(argument.name, &words, decoder) }
                 }
             }
