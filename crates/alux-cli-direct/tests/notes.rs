@@ -135,8 +135,8 @@ where
                 )
                 .arg(
                     self.product()
-                        .field(self.named("User to sign in as"))
-                        .field(self.named("Password to sign in with"))
+                        .field_for("user", self.named("User to sign in as"))
+                        .field_for("password", self.named("Password to sign in with"))
                         .optional(),
                 ),
         )

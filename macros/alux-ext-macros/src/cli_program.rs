@@ -20,7 +20,7 @@ struct CliBackend;
 ///
 /// Spelling modifiers such as `.short('n')` keep a source's type. `.env(..)` and `.default(..)`
 /// give it a fallback, an environment variable alone or a default, and `.optional()`, `.many()`,
-/// and `.switch()` a shape; both are part of its type. A product's `.field(..)` and a sum's
+/// and `.switch()` a shape; both are part of its type. A product's `.field(..)` or `.field_for(..)` and a sum's
 /// `.or(..)` each add the source they declare, in order.
 /// States the checks one source carries where it is written: the argument name `.arg_for(..)` gives
 /// it, and the type its method states for the argument at its position.
@@ -69,6 +69,37 @@ fn source_checks(
         });
     }
     checks
+}
+
+/// States the checks a product source carries where it is written: each field name `.field_for(..)`
+/// gives it, against the field the argument's type names at that position.
+///
+/// Only a reified method states its argument types without a context, so a source of a handler
+/// written first-order carries no field check.
+fn field_checks(
+    named: Option<&(proc_macro2::Ident, proc_macro2::Ident)>,
+    position: usize,
+    fields: &[(usize, Expr)],
+    source: &Type,
+    span: Span,
+) -> Vec<TokenStream> {
+    let Some((_, arg_names)) = named else { return Vec::new() };
+    let stated = format_ident!("ARG_{position}");
+    let spanned = respan(quote!(#source), span);
+    fields
+        .iter()
+        .map(|(field, name)| {
+            quote_spanned! {name.span()=>
+                const _: () = {
+                    let fields = ::alux_cli::cli_product_fields::<#spanned, _>(&#arg_names::#stated);
+                    let message = ::alux_cli::cli_field_mismatch(fields, #field, #name);
+                    if !message.is_empty() {
+                        ::core::panic!("{}", message.as_str());
+                    }
+                };
+            }
+        })
+        .collect()
 }
 
 /// Names `aliased` as `name` beside the program, over those of `parameters` it mentions, and answers
@@ -165,6 +196,9 @@ fn source_type(declaration: &Expr) -> Option<Type> {
         if call.method == "field" || call.method == "or" {
             parts.push(source_type(call.args.first()?)?);
         }
+        if call.method == "field_for" {
+            parts.push(source_type(call.args.iter().nth(1)?)?);
+        }
         current = &call.receiver;
     }
 
@@ -197,6 +231,23 @@ struct ArgumentSource {
     span: proc_macro2::Span,
     source: Type,
     name: Option<Expr>,
+    fields: Vec<(usize, Expr)>,
+}
+
+/// Reads the field names a product source declares with `.field_for(..)`, each at its position.
+fn field_names(source: &Expr) -> Vec<(usize, Expr)> {
+    let mut fields = Vec::new();
+    let mut current = source;
+    while let Expr::MethodCall(call) = current {
+        match call.method.to_string().as_str() {
+            "field" => fields.push(None),
+            "field_for" => fields.push(call.args.first().cloned()),
+            _ => {}
+        }
+        current = &call.receiver;
+    }
+    fields.reverse();
+    fields.into_iter().enumerate().filter_map(|(position, name)| Some((position, name?))).collect()
 }
 
 /// Reads each source a command declares, in authored order, with the span of the `.arg(..)` that
@@ -211,7 +262,7 @@ fn argument_sources(declaration: &Expr) -> Vec<ArgumentSource> {
             if let Some(argument) = call.args.iter().nth(usize::from(named))
                 && let Some(source) = source_type(argument)
             {
-                sources.push(ArgumentSource { span: argument.span(), source, name });
+                sources.push(ArgumentSource { span: argument.span(), source, name, fields: field_names(argument) });
             }
             sources
         }
@@ -442,11 +493,12 @@ impl ProgramBackendAlg for CliBackend {
             let mut inputs = quote!(());
             // Each source supplies the argument at its own position, so a source that cannot is
             // reported at the `.arg(..)` that declares it.
-            for (position, ArgumentSource { span, source, name }) in sources.into_iter().enumerate() {
+            for (position, ArgumentSource { span, source, name, fields }) in sources.into_iter().enumerate() {
                 let named_source =
                     alias(&mut items, &format_ident!("{program}Command{index}Source{position}"), &[], &quote!(#source));
                 inputs = quote!((#inputs, #named_source));
                 checks.extend(source_checks(&operation, named.as_ref(), position, name.as_ref(), &source, span));
+                checks.extend(field_checks(named.as_ref(), position, &fields, &source, span));
                 where_clause.predicates.push(parse_quote_spanned! {span=>
                     #named_source: ::alux_cli::CliSourceAt<#args, #position>
                 });

@@ -235,6 +235,39 @@ where
 
 ```
 
+`.field_for("name", source)` declares the same source for the field it names, and the names are checked against the product's own, in order, when the program compiles:
+
+```rust compile_fail,E0080
+# use alux_cli::{CliCommandsAlg, CliProgramExt, cli};
+# use alux_ext::ext;
+# use alux_shape::Shape;
+# #[derive(Shape)]
+# struct Login { user: String, host: String }
+# trait Remote {}
+# #[ext(name = RemoteExt, defunc)]
+# impl<This> This where This: Remote {
+#     /// Connects.
+#     fn connect(&self, login: Login) -> usize { 0 }
+# }
+#[ext(name = RemoteCliExt, defunc(via = cli))]
+impl<This> This where This: CliCommandsAlg {
+    fn remote_cli<Machine>(&self) {
+        // error: field 0 of the product is `user`, not `host`
+        self.commands().command(
+            "connect",
+            self.op(Machine::connect)
+                .arg(self.product().field_for("host", self.named("Host")).field_for("user", self.named("User"))),
+        )
+    }
+}
+# struct Count;
+# impl alux_cli::CliCommandsAlg for Count { type Commands = usize; fn cli_empty(&self) -> usize { 0 } fn cli_merge(&self, l: usize, r: usize) -> usize { l + r } }
+# impl<O: alux_ext::OperationAlg, S, M> alux_cli::CliOperationAlg<O, S, M> for Count { type Commands = usize; fn cli_operation(&self, _: &'static str, _: O, _: S, _: M, _: alux_cli::Conventions) -> usize { O::ARG_NAMES.len() } }
+# struct Box;
+# impl Remote for Box {}
+# Count.compile_cli(alux_cli::CliProgramBuilder.remote_cli::<Box>());
+```
+
 Fields and alternatives are named, because positions belong to the command:
 
 ```rust compile_fail

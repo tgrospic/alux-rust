@@ -3,8 +3,9 @@
 //! A declaration states one source per operation argument, in order; reading each argument's type
 //! by position lets a lowering check every source against its own argument, where it is written.
 
-use crate::CliSourceFor;
+use crate::{CliSourceFor, Optional, ProductSource, Whole};
 use alux_ext::{ContextArg, StatedArg};
+use alux_shape::Product;
 
 /// Says whether the argument at `position` among `names` is named `name`, at compile time.
 #[must_use]
@@ -823,6 +824,66 @@ pub trait CliStatedFor<Stated> {}
 impl<Source, Arg> CliStatedFor<StatedArg<Arg>> for Source where Source: CliSourceFor<Arg> {}
 
 impl<Source> CliStatedFor<ContextArg> for Source {}
+
+/// Names the fields a product source supplies an argument's fields to, as the argument's type
+/// names them; none for an argument the context decides.
+pub trait CliFieldsFor<Stated> {
+    /// The argument's field names, in order.
+    const FIELDS: &'static [&'static str];
+}
+
+impl<Fields, Value> CliFieldsFor<StatedArg<Value>> for ProductSource<Fields, Whole>
+where
+    Value: Product,
+{
+    const FIELDS: &'static [&'static str] = Value::FIELDS;
+}
+
+impl<Fields, Value> CliFieldsFor<StatedArg<Option<Value>>> for ProductSource<Fields, Optional>
+where
+    Value: Product,
+{
+    const FIELDS: &'static [&'static str] = Value::FIELDS;
+}
+
+impl<Source> CliFieldsFor<ContextArg> for Source {
+    const FIELDS: &'static [&'static str] = &[];
+}
+
+/// Reads, at compile time, the field names of the argument `stated` states that `Source` supplies.
+#[must_use]
+pub const fn cli_product_fields<Source, Stated>(_stated: &Stated) -> &'static [&'static str]
+where
+    Source: CliFieldsFor<Stated>,
+{
+    Source::FIELDS
+}
+
+/// Answers why the field at `position` among `names` is not named `name`, or an empty message when
+/// it is or when no names are known, at compile time: "field 1 of the product is `port`, not `addr`".
+#[must_use]
+pub const fn cli_field_mismatch(names: &[&str], position: usize, name: &str) -> CliArgMessage {
+    let message = CliArgMessage { bytes: [0; 256], len: 0 };
+    if names.is_empty() || cli_arg_named(names, position, name) {
+        return message;
+    }
+    if position >= names.len() {
+        return message
+            .push("the product has ")
+            .push_number(names.len())
+            .push(" fields, so `")
+            .push(name)
+            .push("` has no field to bind");
+    }
+    message
+        .push("field ")
+        .push_number(position)
+        .push(" of the product is `")
+        .push(names[position])
+        .push("`, not `")
+        .push(name)
+        .push("`: sources bind to the product's fields in order")
+}
 
 /// Checks, at compile time, that `Source` can supply the argument `stated` states.
 pub const fn cli_source_stated<Source, Stated>(_stated: &Stated)

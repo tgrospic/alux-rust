@@ -43,6 +43,18 @@ impl<Fields, Presence> ProductSource<Fields, Presence> {
         ProductSource { fields: (self.fields, source), presence: PhantomData }
     }
 
+    /// Declares the source of the next field, the one named `name`.
+    ///
+    /// `defunc(via = cli)` checks the name against the product's own field when the program
+    /// compiles, reporting a source written for another field where it is written.
+    pub fn field_for<Source>(self, name: &'static str, source: Source) -> ProductSource<(Fields, Source), Presence>
+    where
+        Source: CliNamedSource,
+    {
+        let _: &'static str = name;
+        self.field(source)
+    }
+
     /// Supplies `Option` of the product: all of its fields or none of them.
     pub fn optional(self) -> ProductSource<Fields, Optional> {
         ProductSource { fields: self.fields, presence: PhantomData }
