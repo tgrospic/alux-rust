@@ -41,18 +41,16 @@ where
 {
     fn tool_cli<Machine>(&self) {
         self.commands()
-            .cmd(self.op(Machine::serve).arg(self.named("Configuration")))
-            .command("check", self.op(Machine::check).arg(self.positional("File")))
-            .command(
+            .cmd_root(self.op(Machine::serve).arg("config", self.named("Configuration")))
+            .cmd("check", self.op(Machine::check).arg("file", self.positional("File")))
+            .cmd(
                 "copy",
-                self.op(Machine::copy)
-                    .arg_for("from", self.positional("From"))
-                    .arg_for("to", self.named("To").long("from")),
+                self.op(Machine::copy).arg("from", self.positional("From")).arg("to", self.named("To").long("from")),
             )
     }
 
     fn false_cli<Machine>(&self) {
-        self.commands().command("false", self.op(Machine::fail).verbatim())
+        self.commands().cmd("false", self.op(Machine::fail).verbatim())
     }
 }
 

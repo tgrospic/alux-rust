@@ -33,13 +33,13 @@ where
 {
     fn node_cli<Machine>(&self) {
         self.commands()
-            .cmd(
+            .cmd_root(
                 self.op(Machine::run_node)
-                    .arg(self.named("Development mode").switch().env("CARGO_PKG_VERSION_MINOR"))
-                    .arg(self.named("RPC address").optional())
-                    .arg(self.named("Peers to dial").many().env("CARGO_PKG_VERSION").delimiter('.')),
+                    .arg("dev", self.named("Development mode").switch().env("CARGO_PKG_VERSION_MINOR"))
+                    .arg("rpc_addr", self.named("RPC address").optional())
+                    .arg("peers", self.named("Peers to dial").many().env("CARGO_PKG_VERSION").delimiter('.')),
             )
-            .command("check", self.op(Machine::check).arg(self.positional("Configuration file")))
+            .cmd("check", self.op(Machine::check).arg("file", self.positional("Configuration file")))
     }
 }
 

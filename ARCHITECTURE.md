@@ -465,7 +465,7 @@ the conventions its words are read under. The specification names no value type:
 `CliWordAlg`, answered by each interpreter, so a domain type is read by the interpreter that runs it.
 
 `defunc(via = cli)` lowers the fluent declaration to that syntax, checking each source against the
-argument at its position, and `.arg_for(..)` against the argument's name, where the source is written.
+argument at its position, and `.arg(..)` against the argument's name, where the source is written.
 
 `alux-cli-direct` parses words with no framework, `alux-cli-clap` lets clap parse and render help,
 and `alux-cli-multicall` reads one executable invoked under each first-layer command's name.

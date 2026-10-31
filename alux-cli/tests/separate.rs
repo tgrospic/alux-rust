@@ -29,7 +29,7 @@ where
     This: CliCommandsAlg,
 {
     fn cat_commands<Machine>(&self) {
-        self.commands().command("cat", self.op(Machine::cat).arg(self.named("Unbuffered").short('u')))
+        self.commands().cmd("cat", self.op(Machine::cat).arg("unbuffered", self.named("Unbuffered").short('u')))
     }
 }
 
@@ -39,7 +39,7 @@ where
     This: CliCommandsAlg,
 {
     fn echo_commands<Machine>(&self) {
-        self.commands().command("echo", self.op(Machine::echo).arg(self.positional("Words")))
+        self.commands().cmd("echo", self.op(Machine::echo).arg("words", self.positional("Words")))
     }
 }
 

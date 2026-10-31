@@ -38,9 +38,9 @@ where
     This: CliCommandsAlg,
 {
     fn greeting_cli<App>(&self) {
-        self.commands().command(
+        self.commands().cmd(
             "greet",
-            self.op(App::greet).arg(self.positional("Who to greet").default("world")).arg(self.named("Shout").switch().short('l')),
+            self.op(App::greet).arg("name", self.positional("Who to greet").default("world")).arg("loud", self.named("Shout").switch().short('l')),
         )
     }
 }
@@ -79,7 +79,7 @@ An application that already parses with `clap` moves one command at a time. `com
 # }
 # #[ext(name = GreetingCliExt, defunc(via = cli))]
 # impl<This> This where This: CliCommandsAlg {
-#     fn greeting_cli<App>(&self) { self.commands().command("greet", self.op(App::greet).arg(self.positional("Who to greet"))) }
+#     fn greeting_cli<App>(&self) { self.commands().cmd("greet", self.op(App::greet).arg("name", self.positional("Who to greet"))) }
 # }
 # struct App;
 # impl Greeting for App { fn greeting(&self) -> String { "hello".to_owned() } }

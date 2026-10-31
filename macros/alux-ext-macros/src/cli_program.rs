@@ -20,45 +20,43 @@ struct CliBackend;
 ///
 /// Spelling modifiers such as `.short('n')` keep a source's type. `.env(..)` and `.default(..)`
 /// give it a fallback, an environment variable alone or a default, and `.optional()`, `.many()`,
-/// and `.switch()` a shape; both are part of its type. A product's `.field(..)` or `.field_for(..)` and a sum's
-/// `.or(..)` each add the source they declare, in order.
-/// States the checks one source carries where it is written: the argument name `.arg_for(..)` gives
+/// and `.switch()` a shape; both are part of its type. A product's `.field(..)` and a sum's
+/// `.or(..)` each add the source they declare for the part they name, in order.
+/// States the checks one source carries where it is written: the argument name `.arg(..)` gives
 /// it, and the type its method states for the argument at its position.
 fn source_checks(
     operation: &Type,
     named: Option<&(proc_macro2::Ident, proc_macro2::Ident)>,
     position: usize,
-    name: Option<&Expr>,
+    name: &Expr,
     source: &Type,
     span: Span,
 ) -> Vec<TokenStream> {
     let mut checks = Vec::new();
-    // A source declared for an argument by name is checked against the operation's own name for it.
-    if let Some(name) = name {
-        // A reified method's names are on an item no context changes, so the check is an item of its
-        // own, run where the declaration is written; a handler written first-order is checked where
-        // the program is compiled.
-        let check = if let Some((method, arg_names)) = named {
-            let method = method.to_string();
-            quote_spanned! {name.span()=>
-                const _: () = {
-                    let message = ::alux_cli::cli_arg_mismatch(#method, #arg_names::ARG_NAMES, #position, #name);
-                    if !message.is_empty() {
-                        ::core::panic!("{}", message.as_str());
-                    }
-                };
-            }
-        } else {
-            quote_spanned! {name.span()=>
-                const {
-                    if !::alux_cli::cli_arg_named(<#operation as ::alux_ext::OperationAlg>::ARG_NAMES, #position, #name) {
-                        ::core::panic!("an argument is not the one `.arg_for(..)` names: sources bind to the operation's arguments in order");
-                    }
-                };
-            }
-        };
-        checks.push(check);
-    }
+    // Each source names its argument, checked against the operation's own name for it.
+    // A reified method's names are on an item no context changes, so the check is an item of its
+    // own, run where the declaration is written; a handler written first-order is checked where
+    // the program is compiled.
+    let check = if let Some((method, arg_names)) = named {
+        let method = method.to_string();
+        quote_spanned! {name.span()=>
+            const _: () = {
+                let message = ::alux_cli::cli_arg_mismatch(#method, #arg_names::ARG_NAMES, #position, #name);
+                if !message.is_empty() {
+                    ::core::panic!("{}", message.as_str());
+                }
+            };
+        }
+    } else {
+        quote_spanned! {name.span()=>
+            const {
+                if !::alux_cli::cli_arg_named(<#operation as ::alux_ext::OperationAlg>::ARG_NAMES, #position, #name) {
+                    ::core::panic!("an argument is not the one `.arg(..)` names: sources bind to the operation's arguments in order");
+                }
+            };
+        }
+    };
+    checks.push(check);
     // A reified method states each argument type it knows without a context, so the source is
     // checked against it where the declaration is written.
     if let Some((_, arg_names)) = named {
@@ -71,12 +69,12 @@ fn source_checks(
     checks
 }
 
-/// States the checks a product source carries where it is written: each field name `.field_for(..)`
-/// gives it, against the field the argument's type names at that position.
+/// States the checks a compound source carries where it is written: each name `.field(..)` or
+/// `.or(..)` gives it, against the part the argument's type names at that position.
 ///
 /// Only a reified method states its argument types without a context, so a source of a handler
 /// written first-order carries no field check.
-fn field_checks(
+fn part_checks(
     named: Option<&(proc_macro2::Ident, proc_macro2::Ident)>,
     position: usize,
     fields: &[(usize, Expr)],
@@ -91,8 +89,7 @@ fn field_checks(
         .map(|(field, name)| {
             quote_spanned! {name.span()=>
                 const _: () = {
-                    let fields = ::alux_cli::cli_product_fields::<#spanned, _>(&#arg_names::#stated);
-                    let message = ::alux_cli::cli_field_mismatch(fields, #field, #name);
+                    let message = ::alux_cli::cli_part_mismatch::<#spanned, _>(&#arg_names::#stated, #field, #name);
                     if !message.is_empty() {
                         ::core::panic!("{}", message.as_str());
                     }
@@ -194,9 +191,6 @@ fn source_type(declaration: &Expr) -> Option<Type> {
         switch |= call.method == "switch";
         optional_value |= call.method == "optional_value";
         if call.method == "field" || call.method == "or" {
-            parts.push(source_type(call.args.first()?)?);
-        }
-        if call.method == "field_for" {
             parts.push(source_type(call.args.iter().nth(1)?)?);
         }
         current = &call.receiver;
@@ -212,11 +206,6 @@ fn inputs_type(declaration: &Expr) -> Option<Type> {
         "op" => Some(parse_quote!(())),
         "arg" => {
             let previous = inputs_type(&call.receiver)?;
-            let argument = source_type(call.args.first()?)?;
-            Some(parse_quote!((#previous, #argument)))
-        }
-        "arg_for" => {
-            let previous = inputs_type(&call.receiver)?;
             let argument = source_type(call.args.iter().nth(1)?)?;
             Some(parse_quote!((#previous, #argument)))
         }
@@ -225,41 +214,41 @@ fn inputs_type(declaration: &Expr) -> Option<Type> {
     }
 }
 
-/// One source a command declares: where it is written, its type, and the argument name it is
-/// declared for, if `.arg_for(..)` names one.
+/// One source a command declares: where it is written, its type, the argument name `.arg(..)`
+/// declares it for, and the part names a compound source declares.
 struct ArgumentSource {
     span: proc_macro2::Span,
     source: Type,
-    name: Option<Expr>,
+    name: Expr,
     fields: Vec<(usize, Expr)>,
 }
 
-/// Reads the field names a product source declares with `.field_for(..)`, each at its position.
+/// Reads the part names a compound source declares with `.field(..)` or `.or(..)`, each at its
+/// position.
 fn field_names(source: &Expr) -> Vec<(usize, Expr)> {
     let mut fields = Vec::new();
     let mut current = source;
     while let Expr::MethodCall(call) = current {
-        match call.method.to_string().as_str() {
-            "field" => fields.push(None),
-            "field_for" => fields.push(call.args.first().cloned()),
-            _ => {}
+        if (call.method == "field" || call.method == "or")
+            && let Some(name) = call.args.first()
+        {
+            fields.push(name.clone());
         }
         current = &call.receiver;
     }
     fields.reverse();
-    fields.into_iter().enumerate().filter_map(|(position, name)| Some((position, name?))).collect()
+    fields.into_iter().enumerate().collect()
 }
 
 /// Reads each source a command declares, in authored order, with the span of the `.arg(..)` that
 /// declares it, so the obligation it carries is reported where it is written.
 fn argument_sources(declaration: &Expr) -> Vec<ArgumentSource> {
     let Expr::MethodCall(call) = declaration else { return Vec::new() };
-    let named = call.method == "arg_for";
     match call.method.to_string().as_str() {
-        "arg" | "arg_for" => {
+        "arg" => {
             let mut sources = argument_sources(&call.receiver);
-            let name = named.then(|| call.args.first()).flatten().cloned();
-            if let Some(argument) = call.args.iter().nth(usize::from(named))
+            if let Some(name) = call.args.first().cloned()
+                && let Some(argument) = call.args.iter().nth(1)
                 && let Some(source) = source_type(argument)
             {
                 sources.push(ArgumentSource { span: argument.span(), source, name, fields: field_names(argument) });
@@ -338,11 +327,11 @@ fn declared_paths(chain: &Expr, prefix: &[String], paths: &mut Vec<(Vec<String>,
             _ => None,
         };
         match (call.method.to_string().as_str(), name) {
-            ("command", Some(name)) => {
+            ("cmd", Some(name)) => {
                 let path = prefix.iter().cloned().chain([name.value()]).collect();
                 paths.push((path, name.span()));
             }
-            ("cmd", _) => paths.push((prefix.to_vec(), call.method.span())),
+            ("cmd_root", _) => paths.push((prefix.to_vec(), call.method.span())),
             ("nest", Some(name)) => {
                 if let Some(program) = call.args.iter().nth(1) {
                     let nested = prefix.iter().cloned().chain([name.value()]).collect::<Vec<_>>();
@@ -392,8 +381,8 @@ impl VisitMut for Commands<'_> {
             return;
         }
         let declared = match call.method.to_string().as_str() {
-            "command" => 1,
-            "cmd" => 0,
+            "cmd" => 1,
+            "cmd_root" => 0,
             _ => usize::MAX,
         };
         if let Some(declaration) = call.args.iter_mut().nth(declared)
@@ -497,8 +486,8 @@ impl ProgramBackendAlg for CliBackend {
                 let named_source =
                     alias(&mut items, &format_ident!("{program}Command{index}Source{position}"), &[], &quote!(#source));
                 inputs = quote!((#inputs, #named_source));
-                checks.extend(source_checks(&operation, named.as_ref(), position, name.as_ref(), &source, span));
-                checks.extend(field_checks(named.as_ref(), position, &fields, &source, span));
+                checks.extend(source_checks(&operation, named.as_ref(), position, &name, &source, span));
+                checks.extend(part_checks(named.as_ref(), position, &fields, &source, span));
                 where_clause.predicates.push(parse_quote_spanned! {span=>
                     #named_source: ::alux_cli::CliSourceAt<#args, #position>
                 });
@@ -526,12 +515,12 @@ impl ProgramBackendAlg for CliBackend {
 
     fn read_link(call: &ExprMethodCall) -> Option<TokenStream> {
         // Each link is the authored call itself, on an empty program, so the method keeps the
-        // author's token: an editor reading the expansion finds `cmd` or `command` where it is
+        // author's token: an editor reading the expansion finds `cmd_root` or `cmd` where it is
         // defined.
         let method = &call.method;
         let arguments = &call.args;
         match (method.to_string().as_str(), arguments.len()) {
-            ("command" | "nest" | "within", 2) | ("cmd" | "merge", 1) => {
+            ("cmd" | "nest" | "within", 2) | ("cmd_root" | "merge", 1) => {
                 Some(quote!(builder.commands().#method(#arguments).into_program()))
             }
             _ => None,
@@ -616,9 +605,11 @@ mod tests {
 
     #[test]
     fn reads_a_product_or_sum_source_as_its_parts_and_presence() {
-        let product: Expr =
-            parse_quote!(self.product().field(self.named("User")).field(self.named("Secret").env("SECRET")));
-        let sum: Expr = parse_quote!(self.sum().or(self.named("At").short('a')).or(self.named("Out")).optional());
+        let product: Expr = parse_quote!(
+            self.product().field("user", self.named("User")).field("secret", self.named("Secret").env("SECRET"))
+        );
+        let sum: Expr =
+            parse_quote!(self.sum().or("at", self.named("At").short('a')).or("out", self.named("Out")).optional());
         assert_eq!(
             source_type(&product).unwrap().to_token_stream().to_string(),
             quote! {
@@ -654,7 +645,7 @@ mod tests {
             quote! {
                 pub impl<This> This {
                     fn echo_cli<Machine>(&self) {
-                        self.commands().command("echo", self.op(Machine::echo::<Vec<Vec<u8>>, Vec<u8>>))
+                        self.commands().cmd("echo", self.op(Machine::echo::<Vec<Vec<u8>>, Vec<u8>>))
                     }
                 }
             },
@@ -673,11 +664,11 @@ mod tests {
                 pub impl<This> This {
                     fn twice_cli<Machine>(&self) {
                         self.commands()
-                            .command("head", self.op(Machine::head))
-                            .nest("owner", self.commands().command("greet", self.op(Machine::greet)))
-                            .nest("owner", self.commands().command("greet", self.op(Machine::greet)))
-                            .command("head", self.op(Machine::split))
-                            .command("tail", self.op(Machine::tail))
+                            .cmd("head", self.op(Machine::head))
+                            .nest("owner", self.commands().cmd("greet", self.op(Machine::greet)))
+                            .nest("owner", self.commands().cmd("greet", self.op(Machine::greet)))
+                            .cmd("head", self.op(Machine::split))
+                            .cmd("tail", self.op(Machine::tail))
                     }
                 }
             },
@@ -709,8 +700,9 @@ mod tests {
 
     #[test]
     fn reads_the_sources_of_a_command_declared_with_conventions() {
-        let declaration: Expr =
-            parse_quote!(self.op(Machine::echo).arg(self.named("No newline").short('n')).options_first().verbatim());
+        let declaration: Expr = parse_quote!(
+            self.op(Machine::echo).arg("no_newline", self.named("No newline").short('n')).options_first().verbatim()
+        );
         assert_eq!(
             inputs_type(&declaration).unwrap().to_token_stream().to_string(),
             quote! { ((), ::alux_cli::NamedSource<::alux_cli::NoFallback, ::alux_cli::Whole>) }.to_string(),
@@ -724,10 +716,10 @@ mod tests {
             quote! {
                 pub impl<This> This {
                     fn node_cli<Machine>(&self) {
-                        self.commands().cmd(
+                        self.commands().cmd_root(
                             self.op(Machine::start)
-                                .arg(self.named("Development mode").switch())
-                                .arg(self.named("Cache size").optional()),
+                                .arg("dev", self.named("Development mode").switch())
+                                .arg("cache_size", self.named("Cache size").optional()),
                         )
                     }
                 }
@@ -765,9 +757,9 @@ mod tests {
             quote! {
                 pub impl<This> This {
                     fn login_cli<Machine>(&self) {
-                        self.commands().command(
+                        self.commands().cmd(
                             "login",
-                            self.op(Machine::login).arg_for("user", self.named("User")).arg_for("host", self.named("Host")),
+                            self.op(Machine::login).arg("user", self.named("User")).arg("host", self.named("Host")),
                         )
                     }
                 }
@@ -806,8 +798,8 @@ mod tests {
                 {
                     fn reading_cli<Machine, Name>(&self) {
                         self.commands()
-                            .command("lookup", self.op(Machine::lookup).arg(self.positional("Requested name")))
-                            .command("count", self.op(Machine::count).arg(self.named("Every name").short('a')).fallible())
+                            .cmd("lookup", self.op(Machine::lookup).arg("name", self.positional("Requested name")))
+                            .cmd("count", self.op(Machine::count).arg("all", self.named("Every name").short('a')).fallible())
                     }
                 }
             },
@@ -838,7 +830,7 @@ mod tests {
         );
         // One declaration per command, merged into the collection, and no nested program type.
         // Each command is compiled through the call the author wrote, so an editor finds its definition.
-        assert_eq!(output.matches("builder . commands () . command (").count(), 2);
+        assert_eq!(output.matches("builder . commands () . cmd (").count(), 2);
         assert_eq!(output.matches("cli_merge").count(), 2);
     }
 
@@ -849,7 +841,7 @@ mod tests {
             quote! {
                 pub impl<This> This {
                     fn reading_cli<Machine>(&self) {
-                        self.commands().command("sum", self.op(Machine::sum))
+                        self.commands().cmd("sum", self.op(Machine::sum))
                     }
 
                     fn reading_rpc<Machine>(&self) {
@@ -875,7 +867,7 @@ mod tests {
             quote! {
                 pub impl<This> This {
                     fn reading_cli<Machine>(&self) {
-                        self.commands().command("sum", self.op(Machine::sum))
+                        self.commands().cmd("sum", self.op(Machine::sum))
                     }
                 }
             },
@@ -898,7 +890,7 @@ mod tests {
                         This: CliCommandsAlg,
                         Machine: Reading,
                     {
-                        self.commands().command("sum", self.op(Machine::sum))
+                        self.commands().cmd("sum", self.op(Machine::sum))
                     }
                 }
             },
@@ -925,7 +917,7 @@ mod tests {
                 pub impl<This> This {
                     fn library_cli<Shelf, Store>(&self) {
                         self.commands()
-                            .within(self.op(Shelf::open).arg(self.named("Store")).fallible(), self.notes_cli::<Store>())
+                            .within(self.op(Shelf::open).arg("store", self.named("Store")).fallible(), self.notes_cli::<Store>())
                     }
                 }
             },
@@ -944,7 +936,9 @@ mod tests {
         // The expansion is in A-normal form: each part is bound once, then named.
         assert!(output.contains("let part0 = builder . named (\"Store\") ;"), "{output}");
         assert!(
-            output.contains("let part1 = builder . op (< OpenOperation < Shelf > > :: default ()) . arg (part0)"),
+            output.contains(
+                "let part1 = builder . op (< OpenOperation < Shelf > > :: default ()) . arg (\"store\" , part0)"
+            ),
             "{output}"
         );
         assert!(output.contains("builder . commands () . within (part1 , part3)"), "{output}");
@@ -957,7 +951,7 @@ mod tests {
             quote! {
                 pub impl<This> This {
                     fn library_cli<Shelf, Store>(&self) {
-                        self.commands().within(self.op(Shelf::open), self.commands().command("sum", self.op(Store::sum)))
+                        self.commands().within(self.op(Shelf::open), self.commands().cmd("sum", self.op(Store::sum)))
                     }
                 }
             },

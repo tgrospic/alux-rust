@@ -94,25 +94,28 @@ where
     /// Declares the applets.
     fn applets<Machine>(&self) {
         self.commands()
-            .command("cat", self.op(Machine::cat).arg(self.positional("Files").many()).fallible())
-            .command(
+            .cmd("cat", self.op(Machine::cat).arg("files", self.positional("Files").many()).fallible())
+            .cmd(
                 "echo",
                 self.op(Machine::echo)
-                    .arg(self.named("No newline").switch().short('n'))
-                    .arg(self.named("Escapes").switch().short('e'))
-                    .arg(self.named("No escapes").switch().short('E'))
-                    .arg(self.positional("Words").many())
+                    .arg("no_newline", self.named("No newline").switch().short('n'))
+                    .arg("escapes", self.named("Escapes").switch().short('e'))
+                    .arg("no_escapes", self.named("No escapes").switch().short('E'))
+                    .arg("words", self.positional("Words").many())
                     .options_first()
                     .unknown_options_as_operands()
                     .no_end_of_options(),
             )
-            .command("true", self.op(Machine::truth).arg(self.positional("Ignored").many()).verbatim())
-            .command("false", self.op(Machine::falsity).arg(self.positional("Ignored").many()).verbatim().fallible())
+            .cmd("true", self.op(Machine::truth).arg("ignored", self.positional("Ignored").many()).verbatim())
+            .cmd(
+                "false",
+                self.op(Machine::falsity).arg("ignored", self.positional("Ignored").many()).verbatim().fallible(),
+            )
     }
 
     /// Declares the executable: the applets, and `--list` at its root.
     fn executable<Machine>(&self) {
-        self.commands().merge(self.applets::<Machine>()).command("--list", self.op(Machine::list))
+        self.commands().merge(self.applets::<Machine>()).cmd("--list", self.op(Machine::list))
     }
 }
 

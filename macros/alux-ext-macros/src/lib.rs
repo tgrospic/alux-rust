@@ -220,7 +220,7 @@ pub fn shape(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///     /// Declares the reading commands.
 ///     fn reading_cli<Machine, Name>(&self) {
 ///         self.commands()
-///             .command("lookup", self.op(Machine::lookup).arg(self.positional("Requested name")))
+///             .cmd("lookup", self.op(Machine::lookup).arg(self.positional("Requested name")))
 ///     }
 /// }
 ///

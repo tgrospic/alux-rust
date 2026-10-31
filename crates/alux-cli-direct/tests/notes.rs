@@ -92,24 +92,25 @@ where
     /// Declares the notes commands.
     fn notes_cli<Store>(&self) {
         self.commands()
-            .command(
+            .cmd(
                 "add",
                 self.op(Store::add_note)
-                    .arg(self.positional("The note's text"))
-                    .arg(self.named("A tag for the note").many().long("tag").short('t')),
+                    .arg("text", self.positional("The note's text"))
+                    .arg("tags", self.named("A tag for the note").many().long("tag").short('t')),
             )
-            .command(
+            .cmd(
                 "list",
                 self.op(Store::list_notes)
-                    .arg(self.named("Maximum number of notes to show").optional().short('n'))
-                    .arg(self.named("Number the notes").switch().short('v')),
+                    .arg("limit", self.named("Maximum number of notes to show").optional().short('n'))
+                    .arg("verbose", self.named("Number the notes").switch().short('v')),
             )
-            .command("remove", self.op(Store::remove_note).arg(self.positional("The note's number")).fallible())
+            .cmd("remove", self.op(Store::remove_note).arg("number", self.positional("The note's number")).fallible())
             .nest(
                 "owner",
-                self.commands().command(
+                self.commands().cmd(
                     "greet",
-                    self.op(Store::greet).arg(self.named("Who owns the notes").env("CARGO_PKG_NAME").default("nobody")),
+                    self.op(Store::greet)
+                        .arg("owner", self.named("Who owns the notes").env("CARGO_PKG_NAME").default("nobody")),
                 ),
             )
     }
@@ -117,26 +118,28 @@ where
     /// Declares the notes commands, applied to the store `--store` opens from a library.
     fn library_cli<Shelf, Store>(&self) {
         self.commands().within(
-            self.op(Shelf::open).arg(self.named("The store to use").short('s').default("main")).fallible(),
+            self.op(Shelf::open).arg("store", self.named("The store to use").short('s').default("main")).fallible(),
             self.notes_cli::<Store>(),
         )
     }
 
     /// Declares exporting: exactly one target, and the user with the password or neither.
     fn export_cli<Store>(&self) {
-        self.commands().command(
+        self.commands().cmd(
             "export",
             self.op(Store::export)
                 .arg(
+                    "target",
                     self.sum()
-                        .or(self.named("Write to a file").short('f'))
-                        .or(self.named("Send to a URL"))
-                        .or(self.named("Print the notes").switch()),
+                        .or("file", self.named("Write to a file").short('f'))
+                        .or("url", self.named("Send to a URL"))
+                        .or("stdout", self.named("Print the notes").switch()),
                 )
                 .arg(
+                    "auth",
                     self.product()
-                        .field_for("user", self.named("User to sign in as"))
-                        .field_for("password", self.named("Password to sign in with"))
+                        .field("user", self.named("User to sign in as"))
+                        .field("password", self.named("Password to sign in with"))
                         .optional(),
                 ),
         )
@@ -145,7 +148,7 @@ where
     /// Declares the notes commands, applied to the notes `--only` narrows.
     fn scoped_cli<Store>(&self) {
         self.commands().within(
-            self.op(Store::scope).arg(self.named("Only notes with this tag").optional().long("only")),
+            self.op(Store::scope).arg("only", self.named("Only notes with this tag").optional().long("only")),
             self.notes_cli::<Store>(),
         )
     }
@@ -153,7 +156,7 @@ where
     /// Declares the scoped notes commands within the store `--store` opens: two contexts, nested.
     fn nested_cli<Shelf, Store>(&self) {
         self.commands().within(
-            self.op(Shelf::open).arg(self.named("The store to use").short('s').default("main")).fallible(),
+            self.op(Shelf::open).arg("store", self.named("The store to use").short('s').default("main")).fallible(),
             self.scoped_cli::<Store>(),
         )
     }

@@ -113,17 +113,13 @@ impl CliProgramBuilder {
 }
 
 impl<Handler, Inputs, Mode> Operation<Handler, Inputs, Mode> {
-    /// Declares the source of the operation's next argument, the one named `name`.
+    /// Declares the source of the operation's next argument, the one named `name`, after those
+    /// already declared.
     ///
     /// `defunc(via = cli)` checks the name against the operation's own when the program compiles,
     /// reporting a source written for another argument where it is written.
-    pub fn arg_for<Source>(self, name: &'static str, source: Source) -> Operation<Handler, (Inputs, Source), Mode> {
+    pub fn arg<Source>(self, name: &'static str, source: Source) -> Operation<Handler, (Inputs, Source), Mode> {
         let _: &'static str = name;
-        self.arg(source)
-    }
-
-    /// Declares the source of the operation's next argument, after those already declared.
-    pub fn arg<Source>(self, source: Source) -> Operation<Handler, (Inputs, Source), Mode> {
         Operation {
             handler: self.handler,
             inputs: (self.inputs, source),
@@ -135,7 +131,7 @@ impl<Handler, Inputs, Mode> Operation<Handler, Inputs, Mode> {
     /// Declares this operation under one command name, with no program around it.
     ///
     /// A program that states many commands composes their registrations rather than their types,
-    /// so it needs each command on its own. `CliProgram::command` states the same thing inside a
+    /// so it needs each command on its own. `CliProgram::cmd` states the same thing inside a
     /// composition, and is what an author writes.
     pub fn declare(self, name: &'static str) -> Command<Handler, Inputs, Mode> {
         Command { name, handler: self.handler, inputs: self.inputs, mode: self.mode, conventions: self.conventions }
@@ -201,7 +197,7 @@ impl<Program> CliProgram<Program> {
     }
 
     /// Registers a typed operation under a command name.
-    pub fn command<Handler, Inputs, Mode>(
+    pub fn cmd<Handler, Inputs, Mode>(
         self,
         name: &'static str,
         operation: Operation<Handler, Inputs, Mode>,
@@ -212,7 +208,7 @@ impl<Program> CliProgram<Program> {
     /// Declares the program's own command: the one a command line naming no command runs.
     ///
     /// It sits beside named commands, which a command line naming one selects first.
-    pub fn cmd<Handler, Inputs, Mode>(
+    pub fn cmd_root<Handler, Inputs, Mode>(
         self,
         operation: Operation<Handler, Inputs, Mode>,
     ) -> CliProgram<Merge<Program, Command<Handler, Inputs, Mode>>> {

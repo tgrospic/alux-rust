@@ -45,7 +45,7 @@ where
     This: CliCommandsAlg,
 {
     fn logging_cli<Machine>(&self) {
-        self.commands().command("level", self.op(Machine::set_level).arg(self.positional("The level")))
+        self.commands().cmd("level", self.op(Machine::set_level).arg("level", self.positional("The level")))
     }
 }
 

@@ -54,44 +54,50 @@ where
 {
     fn text_cli<Machine>(&self) {
         self.commands()
-            .command(
+            .cmd(
                 "head",
                 self.op(Machine::head)
-                    .arg(self.named("Lines to write").optional().short('n'))
-                    .arg(self.positional("The file"))
+                    .arg("lines", self.named("Lines to write").optional().short('n'))
+                    .arg("file", self.positional("The file"))
                     .numeric_option("lines"),
             )
-            .command(
+            .cmd(
                 "sed",
                 self.op(Machine::sed)
-                    .arg(self.named("Edit in place, keeping a backup with this suffix").optional_value().short('i'))
-                    .arg(self.positional("The script")),
+                    .arg(
+                        "in_place",
+                        self.named("Edit in place, keeping a backup with this suffix").optional_value().short('i'),
+                    )
+                    .arg("script", self.positional("The script")),
             )
-            .command(
+            .cmd(
                 "cp",
                 self.op(Machine::cp)
-                    .arg(self.named("Copy directories recursively").switch().short('r').short_aliases(&['R']))
-                    .arg(self.positional("Files").many()),
+                    .arg(
+                        "recursive",
+                        self.named("Copy directories recursively").switch().short('r').short_aliases(&['R']),
+                    )
+                    .arg("files", self.positional("Files").many()),
             )
-            .command(
+            .cmd(
                 "dd",
                 self.op(Machine::dd)
-                    .arg_for("input", self.named("Input file").assigned("if").optional())
-                    .arg_for("block", self.named("Bytes per block").assigned("bs").optional())
-                    .arg_for("skip", self.named("Input blocks to skip").assigned("skip").default("0"))
-                    .arg_for("conversions", self.named("Conversions").assigned("conv").many().delimiter(','))
-                    .arg_for("extra", self.positional("Other operands").many()),
+                    .arg("input", self.named("Input file").assigned("if").optional())
+                    .arg("block", self.named("Bytes per block").assigned("bs").optional())
+                    .arg("skip", self.named("Input blocks to skip").assigned("skip").default("0"))
+                    .arg("conversions", self.named("Conversions").assigned("conv").many().delimiter(','))
+                    .arg("extra", self.positional("Other operands").many()),
             )
-            .command(
+            .cmd(
                 "ddo",
                 self.op(Machine::dd)
-                    .arg_for("input", self.named("Input file").long("if").optional())
-                    .arg_for("block", self.named("Bytes per block").long("bs").optional())
-                    .arg_for("skip", self.named("Input blocks to skip").default("0"))
-                    .arg_for("conversions", self.named("Conversions").long("conv").many().delimiter(','))
-                    .arg_for("extra", self.positional("Other operands").many()),
+                    .arg("input", self.named("Input file").long("if").optional())
+                    .arg("block", self.named("Bytes per block").long("bs").optional())
+                    .arg("skip", self.named("Input blocks to skip").default("0"))
+                    .arg("conversions", self.named("Conversions").long("conv").many().delimiter(','))
+                    .arg("extra", self.positional("Other operands").many()),
             )
-            .command("split", self.op(Machine::split).arg(self.named("Lines per piece").short('l')))
+            .cmd("split", self.op(Machine::split).arg("lines", self.named("Lines per piece").short('l')))
     }
 }
 
@@ -101,14 +107,16 @@ where
     This: CliCommandsAlg,
 {
     fn head_cli<Machine>(&self) {
-        self.commands().command(
+        self.commands().cmd(
             "head",
-            self.op(Machine::head).arg(self.named("Lines").optional().short('n')).arg(self.positional("File")),
+            self.op(Machine::head)
+                .arg("lines", self.named("Lines").optional().short('n'))
+                .arg("file", self.positional("File")),
         )
     }
 
     fn split_cli<Machine>(&self) {
-        self.commands().command("head", self.op(Machine::split).arg(self.named("Lines per piece").short('n')))
+        self.commands().cmd("head", self.op(Machine::split).arg("lines", self.named("Lines per piece").short('n')))
     }
 
     /// Declares `head` twice, through programs declared apart, which only running can see.

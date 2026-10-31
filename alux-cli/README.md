@@ -39,12 +39,12 @@ where
     /// Declares the reading commands.
     fn reading_cli<Machine, Name>(&self) {
         // An empty program, with one command added.
-        self.commands().command(
+        self.commands().cmd(
             // `lookup` applies the operation `defunc` made from `lookup` above, and its
             // documentation is the command's help.
             "lookup",
             // `name: Name`, once: the first positional word.
-            self.op(Machine::lookup).arg(self.positional("Requested name")),
+            self.op(Machine::lookup).arg("name", self.positional("Requested name")),
         )
     }
 
@@ -62,7 +62,7 @@ where
 
 A program declared in another extension block, or another crate, composes the same way. Whatever `merge`, `nest`, or `within` takes as its program is one, so `self.cat_commands::<Machine>()` there names the program `cat_commands` declares.
 
-A declaration can bind its parts with `let` first and name them in the chain, `let dev = self.named("Dev mode").switch(); self.commands().cmd(self.op(Machine::run).arg(dev))`, which reads as if each were written where it is named and keeps every line short enough for `rustfmt`.
+A declaration can bind its parts with `let` first and name them in the chain, `let dev = self.named("Dev mode").switch(); self.commands().cmd_root(self.op(Machine::run).arg("dev", dev))`, which reads as if each were written where it is named and keeps every line short enough for `rustfmt`.
 
 Each command path must be unique. Repeat one in the same declaration and the program does not compile; repeat one across programs you combine with `merge`, `nest`, or `within`, and running the program reports it:
 
@@ -76,7 +76,7 @@ Each command path must be unique. Repeat one in the same declaration and the pro
 impl<This> This where This: CliCommandsAlg {
     fn lines_cli<Machine>(&self) {
         // error: the command `head` is declared more than once
-        self.commands().command("head", self.op(Machine::head)).command("head", self.op(Machine::tail))
+        self.commands().cmd("head", self.op(Machine::head)).cmd("head", self.op(Machine::tail))
     }
 }
 ```
@@ -119,27 +119,27 @@ where
     /// Declares the notes commands.
     fn notes_cli<Machine>(&self) {
         self.commands()
-            .command(
+            .cmd(
                 "add",
                 self.op(Machine::add_note)
                     // `store: Store`, once: `--store <store>` or `-s <store>`, else `$NOTES_STORE`, else `notes`.
-                    .arg(self.named("Store to write to").short('s').env("NOTES_STORE").default("notes"))
+                    .arg("store", self.named("Store to write to").short('s').env("NOTES_STORE").default("notes"))
                     // `text: Text`, once: the first positional word.
-                    .arg(self.positional("Text of the note"))
+                    .arg("text", self.positional("Text of the note"))
                     // `tags: Vec<Tag>`, any number of times: `--tag <tag>` or `-t <tag>`.
-                    .arg(self.named("Tag the note carries").many().long("tag").short('t'))
+                    .arg("tags", self.named("Tag the note carries").many().long("tag").short('t'))
                     // `pinned: bool`, a switch: true when `--pinned` or `-p` is given.
-                    .arg(self.named("Pin the note").switch().short('p')),
+                    .arg("pinned", self.named("Pin the note").switch().short('p')),
             )
-            .command(
+            .cmd(
                 "list",
                 self.op(Machine::list_notes)
                     // `store: Store`, the same source as in `add`.
-                    .arg(self.named("Store to read from").short('s').env("NOTES_STORE").default("notes"))
+                    .arg("store", self.named("Store to read from").short('s').env("NOTES_STORE").default("notes"))
                     // `tag: Option<Tag>`, at most once: the first positional word, if there is one.
-                    .arg(self.positional("Only notes with this tag").optional())
+                    .arg("tag", self.positional("Only notes with this tag").optional())
                     // `limit: usize`, once: `--limit <limit>` or `-n <limit>`, else `10`.
-                    .arg(self.named("How many notes").short('n').default("10")),
+                    .arg("limit", self.named("How many notes").short('n').default("10")),
             )
     }
 }
@@ -147,7 +147,7 @@ where
 
 A source that cannot supply its argument does not compile once the program is: a missing or extra source, a source of the wrong shape for its argument (`.many()` for a `String`), and a switch with a `.default(..)`. A switch is turned on by its spelling and may fall back to `.env(..)` only.
 
-`.arg_for("name", source)` declares the same source for the argument it names. The names are checked against the operation's own, in order, when the program compiles, so two arguments of one type cannot be swapped unnoticed:
+Each `.arg("name", source)` names the argument it declares. The names are checked against the operation's own, in order, when the program compiles, so two arguments of one type cannot be swapped unnoticed:
 
 ```rust compile_fail,E0080
 # use alux_cli::{CliCommandsAlg, CliProgramExt, cli};
@@ -162,9 +162,9 @@ A source that cannot supply its argument does not compile once the program is: a
 impl<This> This where This: CliCommandsAlg {
     fn remote_cli<Machine>(&self) {
         // error: argument 0 of `ConnectOperation<Machine>` is not `user`
-        self.commands().command(
+        self.commands().cmd(
             "connect",
-            self.op(Machine::connect).arg_for("user", self.named("User")).arg_for("host", self.named("Host")),
+            self.op(Machine::connect).arg("user", self.named("User")).arg("host", self.named("Host")),
         )
     }
 }
@@ -224,18 +224,18 @@ where
     This: CliCommandsAlg,
 {
     fn exporting_cli<Machine, Location, User, Secret>(&self) {
-        self.commands().command(
+        self.commands().cmd(
             "export",
             self.op(Machine::export_all)
-                .arg(self.sum().or(self.named("Export to a location").short('a')).or(self.named("Export to the standard output").switch()))
-                .arg(self.product().field(self.named("User to export as")).field(self.named("Secret of the user")).optional()),
+                .arg("target", self.sum().or("at", self.named("Export to a location").short('a')).or("out", self.named("Export to the standard output").switch()))
+                .arg("credentials", self.product().field("user", self.named("User to export as")).field("secret", self.named("Secret of the user")).optional()),
         )
     }
 }
 
 ```
 
-`.field_for("name", source)` declares the same source for the field it names, and the names are checked against the product's own, in order, when the program compiles:
+Each `.field("name", source)` and `.or("name", source)` names the field or alternative it declares, and the names are checked against the type's own, in order, when the program compiles: a product's fields as written, a sum's variants in snake case.
 
 ```rust compile_fail,E0080
 # use alux_cli::{CliCommandsAlg, CliProgramExt, cli};
@@ -253,10 +253,10 @@ where
 impl<This> This where This: CliCommandsAlg {
     fn remote_cli<Machine>(&self) {
         // error: field 0 of the product is `user`, not `host`
-        self.commands().command(
+        self.commands().cmd(
             "connect",
             self.op(Machine::connect)
-                .arg(self.product().field_for("host", self.named("Host")).field_for("user", self.named("User"))),
+                .arg("login", self.product().field("host", self.named("Host")).field("user", self.named("User"))),
         )
     }
 }
@@ -282,7 +282,7 @@ Fields and alternatives are named, because positions belong to the command:
 impl<This> This where This: CliCommandsAlg {
     fn pairing_cli<Machine, A, B>(&self) {
         // error: a field takes a named source
-        self.commands().command("pair", self.op(Machine::paired).arg(self.product().field(self.positional("A")).field(self.named("B"))))
+        self.commands().cmd("pair", self.op(Machine::paired).arg("pair", self.product().field("a", self.positional("A")).field("b", self.named("B"))))
     }
 }
 ```
@@ -304,10 +304,10 @@ impl<This> This where This: CliCommandsAlg {
 impl<This> This where This: CliCommandsAlg {
     fn shelf_cli<Machine>(&self) {
         // error: a global argument is named
-        self.commands().within(self.op(Machine::opened).arg(self.positional("Store")), self.inner_cli::<Machine>())
+        self.commands().within(self.op(Machine::opened).arg("store", self.positional("Store")), self.inner_cli::<Machine>())
     }
     fn inner_cli<Machine>(&self) {
-        self.commands().command("count", self.op(Machine::counted))
+        self.commands().cmd("count", self.op(Machine::counted))
     }
 }
 ```
@@ -324,7 +324,7 @@ The subtree is a program declared by a method of its own, because the context's 
 impl<This> This where This: CliCommandsAlg {
     fn inline_cli<Shelf>(&self) {
         // error: `within` applies a named program
-        self.commands().within(self.op(Shelf::opened), self.commands().command("x", self.op(Shelf::opened)))
+        self.commands().within(self.op(Shelf::opened), self.commands().cmd("x", self.op(Shelf::opened)))
     }
 }
 ```

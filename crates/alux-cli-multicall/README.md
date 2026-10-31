@@ -37,7 +37,7 @@ where
     This: CliCommandsAlg,
 {
     fn applets<Machine>(&self) {
-        self.commands().command("echo", self.op(Machine::echo).arg(self.positional("Words").many()))
+        self.commands().cmd("echo", self.op(Machine::echo).arg("words", self.positional("Words").many()))
     }
 }
 

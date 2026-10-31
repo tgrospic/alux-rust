@@ -31,19 +31,19 @@ where
 {
     fn blocks_cli<Machine>(&self) {
         self.commands()
-            .command(
+            .cmd(
                 "dd",
                 self.op(Machine::dd)
-                    .arg_for("input", self.named("Input file").assigned("if").optional())
-                    .arg_for("count", self.named("Blocks to copy").assigned("count").optional())
-                    .arg_for("conversions", self.named("Conversions").assigned("conv").many().delimiter(','))
-                    .arg_for("extra", self.positional("Other operands").many()),
+                    .arg("input", self.named("Input file").assigned("if").optional())
+                    .arg("count", self.named("Blocks to copy").assigned("count").optional())
+                    .arg("conversions", self.named("Conversions").assigned("conv").many().delimiter(','))
+                    .arg("extra", self.positional("Other operands").many()),
             )
-            .command(
+            .cmd(
                 "echo",
                 self.op(Machine::echo)
-                    .arg_for("separator", self.named("Separator").optional())
-                    .arg_for("words", self.positional("Words").many()),
+                    .arg("separator", self.named("Separator").optional())
+                    .arg("words", self.positional("Words").many()),
             )
     }
 }

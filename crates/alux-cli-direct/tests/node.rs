@@ -32,13 +32,13 @@ where
 {
     fn node_cli<Machine>(&self) {
         self.commands()
-            .cmd(
+            .cmd_root(
                 self.op(Machine::run_node)
-                    .arg_for("dev", self.named("Development mode").switch().env("CARGO_PKG_VERSION_MINOR"))
-                    .arg_for("rpc_addr", self.named("RPC address").optional())
-                    .arg_for("peers", self.named("Peers to dial").many().env("CARGO_PKG_VERSION").delimiter('.')),
+                    .arg("dev", self.named("Development mode").switch().env("CARGO_PKG_VERSION_MINOR"))
+                    .arg("rpc_addr", self.named("RPC address").optional())
+                    .arg("peers", self.named("Peers to dial").many().env("CARGO_PKG_VERSION").delimiter('.')),
             )
-            .command("check", self.op(Machine::check).arg(self.positional("Configuration file")))
+            .cmd("check", self.op(Machine::check).arg("file", self.positional("Configuration file")))
     }
 
     /// Declares the same command line in A-normal form: each part bound once, then named.
@@ -46,9 +46,9 @@ where
         let dev = self.named("Development mode").switch().env("CARGO_PKG_VERSION_MINOR");
         let rpc_addr = self.named("RPC address").optional();
         let peers = self.named("Peers to dial").many().env("CARGO_PKG_VERSION").delimiter('.');
-        let run = self.op(Machine::run_node).arg_for("dev", dev).arg_for("rpc_addr", rpc_addr).arg_for("peers", peers);
-        let check = self.op(Machine::check).arg(self.positional("Configuration file"));
-        self.commands().cmd(run).command("check", check)
+        let run = self.op(Machine::run_node).arg("dev", dev).arg("rpc_addr", rpc_addr).arg("peers", peers);
+        let check = self.op(Machine::check).arg("file", self.positional("Configuration file"));
+        self.commands().cmd_root(run).cmd("check", check)
     }
 }
 

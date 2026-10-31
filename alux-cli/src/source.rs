@@ -624,7 +624,7 @@ where
 /// extra, or mismatched source fails to compile.
 #[diagnostic::on_unimplemented(
     message = "the declared sources `{Self}` do not supply the operation arguments `{Args}`",
-    note = "declare one source per operation argument, in order, with `.arg(self.positional(..))` or `.arg(self.named(..))`"
+    note = "declare one source per operation argument, in order, with `.arg(name, self.positional(..))` or `.arg(name, self.named(..))`"
 )]
 pub trait CliSources<Args> {
     /// Describes every argument, named by the operation's `names`, in order.

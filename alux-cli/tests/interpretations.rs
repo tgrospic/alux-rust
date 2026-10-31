@@ -78,16 +78,16 @@ where
     /// Declares the reading commands.
     fn reading_cli<Machine, Name>(&self) {
         self.commands()
-            .command("lookup", self.op(Machine::lookup).arg(self.positional("Requested name")))
-            .command("find", self.op(Machine::find_value).arg(self.positional("Requested name")).fallible())
-            .command("sum", self.op(Machine::sum))
-            .command(
+            .cmd("lookup", self.op(Machine::lookup).arg("name", self.positional("Requested name")))
+            .cmd("find", self.op(Machine::find_value).arg("name", self.positional("Requested name")).fallible())
+            .cmd("sum", self.op(Machine::sum))
+            .cmd(
                 "page",
                 self.op(Machine::page)
-                    .arg(self.positional("First name"))
-                    .arg(self.named("Most names").optional().short('n'))
-                    .arg(self.named("Tag to match").many().long("tag"))
-                    .arg(self.named("Verbose output").switch().short('v')),
+                    .arg("from", self.positional("First name"))
+                    .arg("limit", self.named("Most names").optional().short('n'))
+                    .arg("tags", self.named("Tag to match").many().long("tag"))
+                    .arg("verbose", self.named("Verbose output").switch().short('v')),
             )
     }
 
@@ -96,13 +96,13 @@ where
     where
         This: CliCommandsAlg,
     {
-        self.commands().command(
+        self.commands().cmd(
             "page",
             self.op(Machine::page)
-                .arg(self.positional("First name").default("1"))
-                .arg(self.named("Most names").optional().env("READING_LIMIT").default("9"))
-                .arg(self.named("Tag to match").many().long("tag").env("READING_TAG").default("all"))
-                .arg(self.named("Verbose output").switch().short('v')),
+                .arg("from", self.positional("First name").default("1"))
+                .arg("limit", self.named("Most names").optional().env("READING_LIMIT").default("9"))
+                .arg("tags", self.named("Tag to match").many().long("tag").env("READING_TAG").default("all"))
+                .arg("verbose", self.named("Verbose output").switch().short('v')),
         )
     }
 
@@ -112,7 +112,7 @@ where
         This: CliCommandsAlg,
     {
         self.commands().within(
-            self.op(Machine::lookup).arg(self.named("Default name").short('d')),
+            self.op(Machine::lookup).arg("name", self.named("Default name").short('d')),
             self.reading_cli::<Machine, Name>(),
         )
     }
@@ -443,20 +443,26 @@ fn direct_construction_folds_like_the_lowered_declaration() {
     let builder = CliProgramBuilder;
     let direct = builder
         .commands()
-        .command("lookup", builder.op(LookupOperation::<Memory>::default()).arg(builder.positional("Requested name")))
-        .command(
-            "find",
-            builder.op(FindValueOperation::<Memory>::default()).arg(builder.positional("Requested name")).fallible(),
+        .cmd(
+            "lookup",
+            builder.op(LookupOperation::<Memory>::default()).arg("name", builder.positional("Requested name")),
         )
-        .command("sum", builder.op(SumOperation::<Memory>::default()))
-        .command(
+        .cmd(
+            "find",
+            builder
+                .op(FindValueOperation::<Memory>::default())
+                .arg("name", builder.positional("Requested name"))
+                .fallible(),
+        )
+        .cmd("sum", builder.op(SumOperation::<Memory>::default()))
+        .cmd(
             "page",
             builder
                 .op(PageOperation::<Memory>::default())
-                .arg(builder.positional("First name"))
-                .arg(builder.named("Most names").optional().short('n'))
-                .arg(builder.named("Tag to match").many().long("tag"))
-                .arg(builder.named("Verbose output").switch().short('v')),
+                .arg("from", builder.positional("First name"))
+                .arg("limit", builder.named("Most names").optional().short('n'))
+                .arg("tags", builder.named("Tag to match").many().long("tag"))
+                .arg("verbose", builder.named("Verbose output").switch().short('v')),
         );
     let lowered = Describe.compile_cli(CliProgramBuilder.reading_cli::<Memory, u8>());
     assert_eq!(direct.into_program().compile_cli_program(&Describe), lowered);
@@ -567,7 +573,10 @@ fn a_compound_argument_is_one_operation_argument() {
         .law_cli_declaration(
             "pair",
             TakePairOperation::<Memory>::default(),
-            (((), cli.product().field(cli.named("First")).field(cli.named("Second"))), cli.named("Verbose").switch()),
+            (
+                ((), cli.product().field("first", cli.named("First")).field("second", cli.named("Second"))),
+                cli.named("Verbose").switch(),
+            ),
             Total,
             Conventions::default(),
         )

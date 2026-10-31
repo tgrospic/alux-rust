@@ -27,7 +27,7 @@ impl<This> This {
     where
         This: CliCommandsAlg,
     {
-        self.commands().command("sum", self.op(Machine::sum))
+        self.commands().cmd("sum", self.op(Machine::sum))
     }
 
     /// Declares the methods.

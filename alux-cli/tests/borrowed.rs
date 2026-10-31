@@ -24,7 +24,7 @@ where
     This: CliCommandsAlg,
 {
     fn text_commands<Word>(&self) {
-        self.commands().command("cmp", self.op(Word::cmp_bytes))
+        self.commands().cmd("cmp", self.op(Word::cmp_bytes))
     }
 }
 

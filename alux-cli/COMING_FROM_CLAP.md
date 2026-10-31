@@ -14,7 +14,7 @@ Command::new("lookup")
 // then in main: Some(("lookup", m)) => lookup(m)
 
 // alux-cli
-.command("lookup", self.op(Machine::lookup))
+.cmd("lookup", self.op(Machine::lookup))
 ```
 
 ### 🧩 Commands grouped and reused
@@ -41,14 +41,14 @@ The value arrives as your method's parameter, typed and ready to use.
 // then in the handler: m.get_one::<String>("name").unwrap()
 
 // alux-cli
-.arg(self.positional("Requested name"))
+.arg("name", self.positional("Requested name"))
 ```
 
-Both write `.arg(..)`, but they mean different things. In `clap` it registers an argument under an id that the handler looks up again, so a mistyped id fails when the program runs. In `alux-cli` it gives the method's next parameter its source, in order, and the parameter's type is checked when the program compiles. `.arg_for(..)` also names the parameter, and a name that is not the parameter at that position fails to compile:
+Both write `.arg(..)`, but they mean different things. In `clap` it registers an argument under an id that the handler looks up again, so a mistyped id fails when the program runs. In `alux-cli` it names the method's next parameter and gives it its source, in order. Both the name and the parameter's type are checked when the program compiles, so a name that is not the parameter at that position fails to compile:
 
 ```rs
 // alux-cli: `name` is the method's first parameter
-.arg_for("name", self.positional("Requested name"))
+.arg("name", self.positional("Requested name"))
 ```
 
 ### 🔤 Spellings
@@ -60,7 +60,7 @@ The parameter `limit` is spelled `--limit` on its own, and `.short('n')` adds `-
 .arg(Arg::new("limit").long("limit").short('n'))
 
 // alux-cli
-.arg(self.named("Result limit").short('n'))
+.arg("limit", self.named("Result limit").short('n'))
 ```
 
 More spellings for one argument, an operand that assigns one, and a bare number:
@@ -70,17 +70,17 @@ More spellings for one argument, an operand that assigns one, and a bare number:
 .arg(Arg::new("recursive").short('r').visible_short_aliases(['R']).action(ArgAction::SetTrue))
 
 // alux-cli
-.arg(self.named("Copy directories recursively").switch().short('r').short_aliases(&['R']))
+.arg("recursive", self.named("Copy directories recursively").switch().short('r').short_aliases(&['R']))
 
 // clap: no spelling for `dd if=FILE`; it takes the operands and splits them itself
 
 // alux-cli: `if=FILE` assigns the argument, and takes no positional place
-.arg(self.named("Input file").assigned("if").optional())
+.arg("input", self.named("Input file").assigned("if").optional())
 
 // clap: no spelling for `head -5`
 
 // alux-cli: on the command, `-5` reads as `--lines 5`
-self.op(Machine::head).arg(self.named("Lines").optional().short('n')).numeric_option("lines")
+self.op(Machine::head).arg("lines", self.named("Lines").optional().short('n')).numeric_option("lines")
 ```
 
 ### 🔢 How often it occurs, and how it parses
@@ -94,7 +94,7 @@ The source states the shape, `.optional()`, `.many()`, or `.switch()`, and the p
 .value_parser(value_parser!(usize))
 
 // alux-cli: the shape on the source, checked against the parameter's type
-.arg(self.named("Tags").many())
+.arg("tags", self.named("Tags").many())
 ```
 
 Values that one word carries several of, and a value that may be left out:
@@ -104,7 +104,7 @@ Values that one word carries several of, and a value that may be left out:
 .arg(Arg::new("peers").long("peers").value_delimiter(',').action(ArgAction::Append))
 
 // alux-cli: the parameter is a `Vec`
-.arg(self.named("Peers to dial").many().delimiter(','))
+.arg("peers", self.named("Peers to dial").many().delimiter(','))
 
 // clap: `-i` or `-i=.bak`; `-i.bak` errors, since clap needs the `=`
 // so `sed -i.bak`, the usual way to write a backup suffix, cannot be parsed
@@ -112,7 +112,7 @@ Values that one word carries several of, and a value that may be left out:
 
 // alux-cli: the parameter is `Option<Option<String>>`
 // no `-i` is `None`, `-i` is `Some(None)`, and `-i.bak` is `Some(Some(".bak"))`
-.arg(self.named("Edit in place, keeping a backup with this suffix").optional_value().short('i'))
+.arg("in_place", self.named("Edit in place, keeping a backup with this suffix").optional_value().short('i'))
 ```
 
 ### 🌐 Global arguments
@@ -125,7 +125,7 @@ Values that one word carries several of, and a value that may be left out:
 // then in main: open the store, report a failure, then dispatch
 
 // alux-cli
-.within(self.op(App::open).arg(self.named("The store")), self.notes_cli::<Store>())
+.within(self.op(App::open).arg("store", self.named("The store")), self.notes_cli::<Store>())
 ```
 
 ### 🤝 Arguments given together
@@ -137,7 +137,7 @@ The fields arrive together as one struct, and `.optional()` makes them all or no
 .group(ArgGroup::new("auth").args(["user", "password"]).multiple(true).requires_all(...))
 
 // alux-cli
-.arg(self.product().field(self.named("User")).field(self.named("Password")).optional())
+.arg("auth", self.product().field("user", self.named("User")).field("password", self.named("Password")).optional())
 ```
 
 ### 🔀 Arguments that exclude each other
@@ -149,7 +149,7 @@ The choice arrives as one enum carrying exactly the alternative given.
 .arg(Arg::new("file").conflicts_with("url"))
 
 // alux-cli
-.arg(self.sum().or(self.named("Write to a file")).or(self.named("Send to a URL")))
+.arg("target", self.sum().or("file", self.named("Write to a file")).or("url", self.named("Send to a URL")))
 ```
 
 ### 🪂 Fallbacks
@@ -186,7 +186,7 @@ Help lives in the doc comments right beside the code it describes.
 
 // alux-cli
 /// Lists notes.  (on the method)
-.arg(self.named("Maximum number of notes to show"))
+.arg("limit", self.named("Maximum number of notes to show"))
 ```
 
 ### 🧬 Derives
@@ -223,7 +223,7 @@ A global argument is written the same way in both: before the command path, betw
 
 | | `clap` | `alux-cli` |
 |---|---|---|
-| Declaring it | `Arg::global(true)` on the parent | `.arg(self.named(..))` on the context operation |
+| Declaring it | `Arg::global(true)` on the parent | `.arg("name", self.named(..))` on the context operation |
 | Using it | code in `main` | the context operation's body |
 | Its failure | code in `main` | `.fallible()` and `CliFailureAlg`, with the error's own status |
 | The commands' handle | one, whatever `main` passes | `CliContextAlg::Inner`, which can be another type for the subtree |

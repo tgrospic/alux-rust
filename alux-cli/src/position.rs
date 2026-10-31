@@ -3,9 +3,9 @@
 //! A declaration states one source per operation argument, in order; reading each argument's type
 //! by position lets a lowering check every source against its own argument, where it is written.
 
-use crate::{CliSourceFor, Optional, ProductSource, Whole};
+use crate::{CliSourceFor, Optional, ProductSource, SumSource, Whole};
 use alux_ext::{ContextArg, StatedArg};
-use alux_shape::Product;
+use alux_shape::{Product, Sum};
 
 /// Says whether the argument at `position` among `names` is named `name`, at compile time.
 #[must_use]
@@ -46,7 +46,7 @@ impl CliArgMessage {
     pub const fn as_str(&self) -> &str {
         match core::str::from_utf8(self.bytes.split_at(self.len).0) {
             Ok(message) => message,
-            Err(_) => "an argument is not the one `.arg_for(..)` names",
+            Err(_) => "an argument is not the one `.arg(..)` names",
         }
     }
 
@@ -825,64 +825,101 @@ impl<Source, Arg> CliStatedFor<StatedArg<Arg>> for Source where Source: CliSourc
 
 impl<Source> CliStatedFor<ContextArg> for Source {}
 
-/// Names the fields a product source supplies an argument's fields to, as the argument's type
-/// names them; none for an argument the context decides.
-pub trait CliFieldsFor<Stated> {
-    /// The argument's field names, in order.
-    const FIELDS: &'static [&'static str];
+/// Names the parts a compound source supplies an argument's parts to, as the argument's type names
+/// them: a product's fields or a sum's alternatives; none for an argument the context decides.
+pub trait CliPartsFor<Stated> {
+    /// The argument's part names, in order.
+    const PARTS: &'static [&'static str];
+    /// What one part is called: `field` or `alternative`.
+    const PART: &'static str;
+    /// What the whole is called: `product` or `sum`.
+    const WHOLE: &'static str;
 }
 
-impl<Fields, Value> CliFieldsFor<StatedArg<Value>> for ProductSource<Fields, Whole>
+impl<Fields, Value> CliPartsFor<StatedArg<Value>> for ProductSource<Fields, Whole>
 where
     Value: Product,
 {
-    const FIELDS: &'static [&'static str] = Value::FIELDS;
+    const PARTS: &'static [&'static str] = Value::FIELDS;
+    const PART: &'static str = "field";
+    const WHOLE: &'static str = "product";
 }
 
-impl<Fields, Value> CliFieldsFor<StatedArg<Option<Value>>> for ProductSource<Fields, Optional>
+impl<Fields, Value> CliPartsFor<StatedArg<Option<Value>>> for ProductSource<Fields, Optional>
 where
     Value: Product,
 {
-    const FIELDS: &'static [&'static str] = Value::FIELDS;
+    const PARTS: &'static [&'static str] = Value::FIELDS;
+    const PART: &'static str = "field";
+    const WHOLE: &'static str = "product";
 }
 
-impl<Source> CliFieldsFor<ContextArg> for Source {
-    const FIELDS: &'static [&'static str] = &[];
-}
-
-/// Reads, at compile time, the field names of the argument `stated` states that `Source` supplies.
-#[must_use]
-pub const fn cli_product_fields<Source, Stated>(_stated: &Stated) -> &'static [&'static str]
+impl<Alternatives, Value> CliPartsFor<StatedArg<Value>> for SumSource<Alternatives, Whole>
 where
-    Source: CliFieldsFor<Stated>,
+    Value: Sum,
 {
-    Source::FIELDS
+    const PARTS: &'static [&'static str] = Value::ALTERNATIVES;
+    const PART: &'static str = "alternative";
+    const WHOLE: &'static str = "sum";
 }
 
-/// Answers why the field at `position` among `names` is not named `name`, or an empty message when
-/// it is or when no names are known, at compile time: "field 1 of the product is `port`, not `addr`".
+impl<Alternatives, Value> CliPartsFor<StatedArg<Option<Value>>> for SumSource<Alternatives, Optional>
+where
+    Value: Sum,
+{
+    const PARTS: &'static [&'static str] = Value::ALTERNATIVES;
+    const PART: &'static str = "alternative";
+    const WHOLE: &'static str = "sum";
+}
+
+impl<Source> CliPartsFor<ContextArg> for Source {
+    const PARTS: &'static [&'static str] = &[];
+    const PART: &'static str = "part";
+    const WHOLE: &'static str = "argument";
+}
+
+/// Answers why the part at `position` of the argument `stated` states, which `Source` supplies, is
+/// not named `name`, or an empty message when it is or when no names are known, at compile time:
+/// "field 1 of the product is `port`, not `addr`".
 #[must_use]
-pub const fn cli_field_mismatch(names: &[&str], position: usize, name: &str) -> CliArgMessage {
+pub const fn cli_part_mismatch<Source, Stated>(_stated: &Stated, position: usize, name: &str) -> CliArgMessage
+where
+    Source: CliPartsFor<Stated>,
+{
+    let (names, part, whole) = (Source::PARTS, Source::PART, Source::WHOLE);
     let message = CliArgMessage { bytes: [0; 256], len: 0 };
     if names.is_empty() || cli_arg_named(names, position, name) {
         return message;
     }
     if position >= names.len() {
         return message
-            .push("the product has ")
+            .push("the ")
+            .push(whole)
+            .push(" has ")
             .push_number(names.len())
-            .push(" fields, so `")
+            .push(" ")
+            .push(part)
+            .push("s, so `")
             .push(name)
-            .push("` has no field to bind");
+            .push("` has no ")
+            .push(part)
+            .push(" to bind");
     }
     message
-        .push("field ")
+        .push(part)
+        .push(" ")
         .push_number(position)
-        .push(" of the product is `")
+        .push(" of the ")
+        .push(whole)
+        .push(" is `")
         .push(names[position])
         .push("`, not `")
         .push(name)
-        .push("`: sources bind to the product's fields in order")
+        .push("`: sources bind to the ")
+        .push(whole)
+        .push("'s ")
+        .push(part)
+        .push("s in order")
 }
 
 /// Checks, at compile time, that `Source` can supply the argument `stated` states.

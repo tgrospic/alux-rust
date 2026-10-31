@@ -34,11 +34,12 @@ where
     This: CliCommandsAlg,
 {
     fn playground_cli<Machine>(&self) {
-        self.commands().cmd(
+        self.commands().cmd_root(
             self.op(Machine::play).arg(
+                "p2p",
                 self.product()
-                    .field(self.named("Addresses to listen on").many().delimiter(','))
-                    .field(self.named("Port to listen on").default("30303")),
+                    .field("listen", self.named("Addresses to listen on").many().delimiter(','))
+                    .field("port", self.named("Port to listen on").default("30303")),
             ),
         )
     }

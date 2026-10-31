@@ -35,24 +35,16 @@ impl Default for ProductSource<()> {
 }
 
 impl<Fields, Presence> ProductSource<Fields, Presence> {
-    /// Declares the source of the next field.
-    pub fn field<Source>(self, source: Source) -> ProductSource<(Fields, Source), Presence>
-    where
-        Source: CliNamedSource,
-    {
-        ProductSource { fields: (self.fields, source), presence: PhantomData }
-    }
-
     /// Declares the source of the next field, the one named `name`.
     ///
     /// `defunc(via = cli)` checks the name against the product's own field when the program
     /// compiles, reporting a source written for another field where it is written.
-    pub fn field_for<Source>(self, name: &'static str, source: Source) -> ProductSource<(Fields, Source), Presence>
+    pub fn field<Source>(self, name: &'static str, source: Source) -> ProductSource<(Fields, Source), Presence>
     where
         Source: CliNamedSource,
     {
         let _: &'static str = name;
-        self.field(source)
+        ProductSource { fields: (self.fields, source), presence: PhantomData }
     }
 
     /// Supplies `Option` of the product: all of its fields or none of them.
@@ -75,11 +67,15 @@ impl Default for SumSource<()> {
 }
 
 impl<Alternatives, Presence> SumSource<Alternatives, Presence> {
-    /// Declares the source of the next alternative.
-    pub fn or<Source>(self, source: Source) -> SumSource<(Alternatives, Source), Presence>
+    /// Declares the source of the next alternative, the one named `name`.
+    ///
+    /// `defunc(via = cli)` checks the name against the sum's own alternative when the program
+    /// compiles, reporting a source written for another alternative where it is written.
+    pub fn or<Source>(self, name: &'static str, source: Source) -> SumSource<(Alternatives, Source), Presence>
     where
         Source: CliNamedSource,
     {
+        let _: &'static str = name;
         SumSource { alternatives: (self.alternatives, source), presence: PhantomData }
     }
 
